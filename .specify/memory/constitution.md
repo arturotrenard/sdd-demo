@@ -1,36 +1,29 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 2.8.1 → 2.9.0
-Bump rationale: MINOR. Principle V is restructured for an on-premise
-  deployment scope: authentication and authorization are explicitly
-  **deferred** (services run anonymously inside the trusted network
-  boundary), with an automatic re-activation trigger that re-engages those
-  rules without further amendment the moment the system grows past the
-  perimeter (cloud, multi-tenant, untrusted clients). The always-on rules
-  (TLS, secrets, server-side validation, dependency scanning) remain MUST
-  and are reaffirmed. An "Architectural readiness" sub-section keeps the
-  insertion points (`Interceptor`s, `ICurrentUser` / `ITenantContext` DI
-  stubs) wired so re-engaging auth later is configuration, not refactor.
-  Governance updated: the quarterly Principle V audit gains an explicit
-  two-question checklist (always-on rules intact? auth trigger fired?).
+Version change: 2.9.0 → 2.10.0
+Bump rationale: MINOR. Tech Stack gains a new "Local development
+  orchestration" bullet that mandates a .NET Aspire `*.AppHost` project
+  per service as the canonical one-command bring-up of the service plus
+  its infrastructure dependencies plus the Aspire dashboard (which
+  doubles as the local OTLP collector for Principle IV signals). The
+  bullet ships with two load-bearing carve-outs: (a) tests stay on
+  Testcontainers (Principle II) — Aspire is NOT a test host; (b)
+  production deployments do NOT use the AppHost — it is a developer-
+  experience artifact, not a deployment artifact. A `docker-compose.dev.yml`
+  MAY coexist as a fallback for SDK-less environments but the AppHost is
+  the primary path. The "Observability backends" bullet is tightened in
+  parallel: the Aspire dashboard is no longer a "MAY substitute" — it is
+  the default local OTLP endpoint, supplied by the mandatory AppHost.
 
 Modified principles:
-  - V. Security by Default — restructured into Scope / Always-on / Deferred /
-    Architectural readiness sub-sections. Scope statement names the
-    on-premise context and the deferral. Always-on rules unchanged in
-    substance (TLS, secrets, validation, scanning) but reorganized for
-    clarity. Deferred rules retain the original wording (auth-by-default,
-    policies in code, cross-cutting via interceptors) so they re-engage
-    cleanly when the trigger fires. Architectural readiness sub-section is
-    new: interceptor chain reserved for future auth, optional anonymous-stub
-    `ICurrentUser` / `ITenantContext` DI services, Swagger-UI-Development-only
-    SHOULD even during the deferral window.
+  - None. (Principles I–VI unchanged.)
 
 Modified sections:
-  - Governance — quarterly audit of Principle V now explicitly two-question:
-    (1) always-on rules intact? (2) re-activation trigger fired? If (2) yes,
-    deferred rules become MUST and a follow-up issue MUST be opened.
+  - Technology Stack & Platform Constraints — new "Local development
+    orchestration" bullet inserted after "Observability backends".
+    "Observability backends" bullet tightened to point at the AppHost-
+    provided Aspire dashboard as the local OTLP collector by default.
 
 Earlier history (oldest first):
   - 1.0.0 → 1.0.1 (PATCH): Principle I pointer to
@@ -68,9 +61,22 @@ Earlier history (oldest first):
   - 2.8.0 → 2.8.1 (PATCH): Principle VI Validation rule scope made explicit
     — Data Annotations apply to every DTO-shaped type; protobuf messages
     and interceptor logic are explicit carve-outs.
+  - 2.8.1 → 2.9.0 (MINOR): Principle V restructured for on-premise
+    deployment — authn/authz explicitly deferred (services run anonymously
+    inside the trusted boundary); always-on rules (TLS, secrets, validation,
+    dependency scanning) reaffirmed; automatic re-activation trigger when
+    the system grows past the perimeter; architectural-readiness sub-
+    section keeps interceptor chain + identity DI seams in place so
+    re-engaging auth is configuration, not refactor; quarterly audit gained
+    a two-question Principle V checklist.
 
 Templates requiring updates (cumulative):
-  - ✅ .specify/templates/plan-template.md — Constitution Check is generic; no edit.
+  - ⚠️ .specify/templates/plan-template.md — Constitution Check is generic
+    and pulls rules from this file by reference, so no template edit is
+    strictly required; however, when the Technical Context section is
+    filled in for a .NET service, it SHOULD list the `src/AppHost/`
+    Aspire project alongside the other src/ projects in the Project
+    Structure block. (Per 2.10.0)
   - ✅ .specify/templates/spec-template.md — No principle-driven sections affected.
   - ⚠️ .specify/templates/tasks-template.md — Service scaffolding tasks SHOULD
     produce: (a) `Infrastructure.Migrations` sub-project holding the EF
@@ -87,7 +93,14 @@ Templates requiring updates (cumulative):
     accompanying unit-test fixture exercising both happy-path and
     validation-failure paths. (Per 2.8.1) Validation attribute coverage
     extended to translation/mapping records and any DTO-shaped type that
-    crosses a layer boundary.
+    crosses a layer boundary. (Per 2.10.0) Add: (h) an `src/AppHost/<Service>.AppHost.csproj`
+    referencing `Aspire.Hosting.AppHost`, with a `Program.cs` that wires
+    Postgres + Redis + the `Api` project via Aspire hosting integrations
+    (`builder.AddPostgres(...).AddDatabase(...)`, `builder.AddRedis(...)`,
+    `builder.AddProject<Projects.Api>(...)`), the AppHost added to the
+    solution file, and the canonical local bring-up step documented as
+    `dotnet run --project src/AppHost` (replacing any standalone
+    `docker-compose.dev.yml`-only bring-up; compose may remain as fallback).
 
 In-flight artifact audit required (cumulative):
   - From 2.7.0: any existing `Infrastructure/Repositories/Ef*.cs` or
@@ -116,12 +129,25 @@ In-flight artifact audit required (cumulative):
     silently shipped beyond on-prem (cloud, multi-tenant, untrusted
     clients) WITHOUT re-engaging the deferred auth rules is non-compliant
     and MUST be remediated immediately — the trigger is automatic.
+  - From 2.10.0: (i) any service whose only local-dev bring-up is
+    `docker compose up` MUST add an `src/AppHost/` Aspire project; the
+    compose file MAY remain as a fallback per the carve-out in the new
+    Tech Stack bullet; (ii) any feature `plan.md` or `quickstart.md` that
+    documents `docker compose -f docker-compose.dev.yml up` as the primary
+    bring-up MUST be updated to document `dotnet run --project src/AppHost`
+    as primary, with compose demoted to fallback; (iii) any test project
+    using `Aspire.Hosting.Testing` / `DistributedApplicationTestingBuilder`
+    on the canonical test path MUST be reverted to Testcontainers per
+    Principle II — Aspire is not a test host.
 
 Follow-up TODOs:
   - When the auth re-activation trigger fires (per Principle V scope), open
     an issue tagged `security:auth-reactivation` to wire the deferred rules
     into the active codebase before any further feature work on the
     affected service.
+  - (2.10.0) None beyond the in-flight audit above; this amendment is
+    purely additive at the Tech Stack layer with explicit non-goals
+    (tests stay on Testcontainers; production stays on plain containers).
 -->
 
 # SDD Demo Constitution
@@ -846,11 +872,51 @@ codebase honest about complexity.
 - **Observability backends**: OpenTelemetry → OTLP collector → Prometheus
   (metrics) + Tempo or Jaeger (traces) + Loki (logs). Grafana is the visualization
   layer; dashboards are committed to `monitoring/<service-name>.json` **at the
-  repository root** (Principle IV). Local dev / CI MAY substitute the .NET
-  Aspire dashboard for the full collector + backends stack — production
-  deployments MUST use the OTLP → Prometheus/Tempo/Loki path. The
+  repository root** (Principle IV). Local dev uses the **.NET Aspire dashboard**
+  (provided by the mandatory AppHost — see "Local development orchestration"
+  bullet below) as the local OTLP collector; production deployments MUST use
+  the OTLP → Prometheus/Tempo/Loki path. CI smoke jobs without the .NET SDK
+  MAY fall back to a standalone OTLP collector container. The
   `dotnet-observability` skill (Principle IV) is the canonical reference for
   the full toolchain wiring; this bullet only names the components.
+- **Local development orchestration — .NET Aspire AppHost (NON-NEGOTIABLE).**
+  Every service MUST ship a `*.AppHost` project (referencing
+  `Aspire.Hosting.AppHost`) at `src/AppHost/` whose sole responsibility is to
+  orchestrate the service plus its infrastructure dependencies (Postgres,
+  Redis, message broker, etc.) for local developer bring-up. Rules:
+  - **Canonical bring-up**: `dotnet run --project src/AppHost`. This single
+    command MUST start the service, all of its declared dependencies, AND the
+    .NET Aspire dashboard (which doubles as the local OTLP collector for
+    Principle IV signals — see the "Observability backends" bullet above).
+    Multi-step `docker compose up` + `dotnet run` recipes are forbidden as
+    the primary path.
+  - **Resource registration MUST go through Aspire hosting integrations** —
+    `builder.AddPostgres(...).AddDatabase(...)`, `builder.AddRedis(...)`,
+    `builder.AddProject<Projects.Api>(...)`, etc. Ad-hoc `Process.Start` or
+    shell-out (`Exec`) from the AppHost is forbidden — those would bypass
+    Aspire's lifecycle, dashboard wiring, and connection-string injection.
+  - **Carve-out — tests**. Integration and infrastructure tests MUST continue
+    to use **Testcontainers** (Principle II). Aspire is **not** a test host:
+    `Aspire.Hosting.Testing` / `DistributedApplicationTestingBuilder` MUST
+    NOT be used on the canonical test path because it duplicates the
+    per-test-class isolation that Testcontainers already provides and would
+    re-litigate the established `WebApplicationFactory<Program>` +
+    `GrpcChannel` integration pattern. The AppHost is for `F5` / dev-loop
+    only.
+  - **Carve-out — production**. Production deployments MUST NOT use the
+    AppHost. Production targets plain containers / k8s manifests; the
+    AppHost is a developer-experience artifact, not a deployment artifact.
+    The AppHost project MUST NOT be referenced from `Api` or any other
+    runtime project — only from the solution file.
+  - **`docker-compose.dev.yml` fallback**: a compose file MAY coexist as a
+    fallback for environments without the .NET SDK (CI smoke jobs,
+    air-gapped boxes, language-agnostic onboarding). When both exist, they
+    MUST stay in sync (same image versions, same ports, same env vars) and
+    the AppHost is canonical — divergence is a review blocker. If only one
+    of the two exists, it MUST be the AppHost.
+  - **Quickstart obligation**: every feature's `quickstart.md` MUST document
+    `dotnet run --project src/AppHost` as the primary bring-up step; any
+    compose-based recipe MUST be labeled "fallback".
 - **Caching**: [`ZiggyCreatures.FusionCache`](https://github.com/ZiggyCreatures/FusionCache)
   is the only sanctioned cache abstraction. Direct use of `IMemoryCache` /
   `IDistributedCache` / Microsoft `HybridCache` from business code is forbidden
@@ -1002,4 +1068,4 @@ codebase honest about complexity.
   (project root) and in the active feature's `plan.md` (linked from `CLAUDE.md`'s
   SPECKIT block).
 
-**Version**: 2.9.0 | **Ratified**: 2026-04-26 | **Last Amended**: 2026-04-26
+**Version**: 2.10.0 | **Ratified**: 2026-04-26 | **Last Amended**: 2026-04-27

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SddDemo.Ledger.Contracts</RootNamespace>
+    <AssemblyName>SddDemo.Ledger.Contracts</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Grpc.Tools">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Google.Api.CommonProtos" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Google.Api.CommonProtos ships its .proto sources under content/protos/.
+         Wire that path as an AdditionalImportDir so Grpc.Tools resolves
+         google/api/annotations.proto and google/api/http.proto. -->
+    <Protobuf Include="Protos\**\*.proto"
+              GrpcServices="Both"
+              AdditionalImportDirs="$(NuGetPackageRoot)google.api.commonprotos\2.16.0\content\protos\" />
+  </ItemGroup>
+
+</Project>

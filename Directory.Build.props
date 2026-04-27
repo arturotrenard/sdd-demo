@@ -1,0 +1,43 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);CA1014;CA1707;CA1812;CA2007;CA1848;CA1859;NU1902;NU1510;CA1716;CA1000;CA1873</NoWarn>
+    <!-- CA1716 (Error type name conflict with VB keyword) and CA1000 (static members
+         on generic types) conflict with the constitution-mandated Result<T> / Error
+         shapes (Principle VI > Result pattern) — suppressed project-wide. -->
+    <!-- NU1902 (moderate-severity vulnerable package): allowed per Constitution Principle V > Always-on
+         ("high-severity advisories block merge" — moderate does not). T086 still scans on CI.
+         NU1510 (PackageReference for transitively-provided package): false positive once
+         CentralPackageTransitivePinningEnabled lights up. -->
+    <!-- NU1903 (high-severity vulnerable package) is NOT suppressed — that one IS a merge blocker. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NuGet vulnerability audit suppressions — explicit justifications.
+         Per Constitution Principle V > Always-on, every suppression MUST be justified.
+         These advisories apply to the standalone System.Security.Cryptography.Xml NuGet
+         package when used on older runtimes (.NET Framework, .NET Standard 2.0). On .NET 10
+         the runtime ships an in-box implementation that the affected code paths flow through;
+         the NuGet asset is metadata-only here. The transitive comes from the EF Core /
+         Microsoft.AspNetCore.Mvc.Testing graph and cannot be removed without dropping those
+         features. T086 (Phase 7) re-runs the full vuln scan and revisits these annually. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-37gx-xxp4-5rgx" />
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-w3x6-4m5h-cxqf" />
+  </ItemGroup>
+
+</Project>

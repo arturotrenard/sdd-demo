@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SddDemo.Ledger.Infrastructure.Migrations</RootNamespace>
+    <AssemblyName>SddDemo.Ledger.Infrastructure.Migrations</AssemblyName>
+    <!-- EF-generated migration files use array literals at call sites — codegen output;
+         CA1861 ("prefer static readonly arrays") doesn't apply. -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Application\SddDemo.Ledger.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+</Project>

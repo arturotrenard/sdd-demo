@@ -1,0 +1,54 @@
+# .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# .NET tool / NuGet
+.dotnet/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+nuget.config.bak
+
+# EF Core
+*.efbackup
+
+# Test outputs
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+benchmarks/results/
+BenchmarkDotNet.Artifacts/
+
+# Aspire
+.aspire/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.user
+appsettings.*.local.json
+secrets.json
+
+# Docker volumes / local state
+docker-volumes/

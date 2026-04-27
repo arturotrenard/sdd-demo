@@ -255,6 +255,13 @@ single source of truth for the assumptions baked into `plan.md`,
     `ledger.operation.duration` with explicit buckets
     `[10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]`.
   - FusionCache OTel instrumentation registered with the same provider.
+- **Local OTLP endpoint**: per the v2.10.0 Tech Stack amendment, the
+  local collector is the **.NET Aspire dashboard** spun up by
+  `src/AppHost/` (see §15). The dashboard publishes the OTLP endpoint
+  (`OTEL_EXPORTER_OTLP_ENDPOINT`) as a connection string; the AppHost
+  forwards it to the Api project so the existing `UseOtlpExporter()`
+  call requires no `F5`-specific wiring. Production deployments still
+  export to OTLP → Prometheus + Tempo + Loki unchanged.
 - Health checks: `/health/live` (always 200), `/health/ready` validates
   DB (Npgsql) + Redis + cache backplane.
 - Dashboard: committed at `monitoring/ledger-service.json` (repo root,
@@ -262,7 +269,9 @@ single source of truth for the assumptions baked into `plan.md`,
   `dotnet-observability` skill.
 - **Rationale**: Constitution Principle IV mandates the 5-phase flow,
   dot-namespacing, low-cardinality tags, explicit histogram buckets, and
-  `/health/*` filtering from tracing.
+  `/health/*` filtering from tracing. The Aspire dashboard satisfies
+  the local-collector requirement without an extra container, while
+  the production path remains the same OTLP → backend pipeline.
 
 ## 11. Test strategy
 
@@ -314,7 +323,94 @@ single source of truth for the assumptions baked into `plan.md`,
 - **Rationale**: ISO 4217 changes rarely; pulling from the BCL avoids a
   hand-maintained list. A process restart picks up any framework update.
 
-## 14. Out of scope (re-confirmed from `spec.md`)
+## 14. Local development orchestration — .NET Aspire AppHost (v2.10.0)
+
+- **Decision**: A new `src/AppHost/SddDemo.Ledger.AppHost.csproj`
+  project — referencing `Aspire.Hosting.AppHost`,
+  `Aspire.Hosting.PostgreSQL`, and `Aspire.Hosting.Redis` — owns local-
+  developer orchestration. Its `Program.cs` declares the resources via
+  Aspire hosting integrations and wires the connection-string
+  references into the `Api` project:
+
+  ```csharp
+  var builder = DistributedApplication.CreateBuilder(args);
+
+  var postgres = builder.AddPostgres("postgres")
+      .WithDataVolume()                       // persistent across restarts
+      .AddDatabase("ledger");
+
+  var redis = builder.AddRedis("redis");
+
+  builder.AddProject<Projects.SddDemo_Ledger_Api>("api")
+      .WithReference(postgres)
+      .WithReference(redis)
+      .WaitFor(postgres)
+      .WaitFor(redis);
+
+  builder.Build().Run();
+  ```
+
+  Canonical bring-up: **`dotnet run --project src/AppHost`**. This
+  single command starts Postgres, Redis, the Api, and the Aspire
+  dashboard (which publishes the local OTLP endpoint — see §10).
+  `Api/Program.cs` reads `ConnectionStrings:ledger` and
+  `ConnectionStrings:redis` (injected by Aspire) for `AddNpgsqlDataSource`
+  and the FusionCache Redis L2 + backplane registration; no per-
+  environment branching is needed.
+
+- **Carve-outs** (load-bearing, per the v2.10.0 amendment):
+  - **Tests stay on Testcontainers** (Principle II). The integration
+    suite continues to host the service via `WebApplicationFactory<Program>`
+    + `GrpcChannel`, with Postgres and Redis spun per test class via
+    `Testcontainers.PostgreSql` / `Testcontainers.Redis`.
+    `Aspire.Hosting.Testing` / `DistributedApplicationTestingBuilder`
+    are explicitly NOT used — Aspire is a dev-loop tool, not a test
+    host, and re-introducing it on the test path would duplicate the
+    per-test isolation Testcontainers already provides and re-litigate
+    the `WebApplicationFactory<Program>` integration pattern.
+  - **Production does not use the AppHost.** Deployments target plain
+    containers (compose/Helm/k8s manifests). The AppHost project is a
+    developer-experience artifact; `Api`/`Application`/`Infrastructure`/
+    `Domain` MUST NOT reference it back. The solution file lists it,
+    but no runtime project does.
+  - **`docker-compose.dev.yml` is a documented fallback only** for
+    SDK-less environments (CI smoke jobs, air-gapped boxes,
+    language-agnostic onboarding). When both exist they MUST stay in
+    sync (image versions, ports, env vars). The AppHost is canonical;
+    divergence is a review blocker.
+
+- **EF migrations interplay**: the AppHost orchestrates the runtime
+  service but does NOT run migrations. Developers continue to invoke
+  `dotnet ef database update --project src/Infrastructure.Migrations
+  --startup-project src/Infrastructure.Migrations` against the
+  Aspire-provisioned Postgres connection string surfaced in the Aspire
+  dashboard (or hard-coded `Host=localhost;Port=<aspire-mapped>;...`).
+  Per Constitution Tech Stack > Persistence, schema management at
+  deploy time is the preferred enforcement; the AppHost path mirrors
+  that ordering for local dev.
+
+- **Rationale**: The v2.10.0 amendment makes the Aspire AppHost the
+  single one-command bring-up across every service in the workspace.
+  It eliminates the multi-step "compose up → migrate → run" recipe and
+  consolidates the local OTLP collector into the same dashboard that
+  shows logs/metrics/traces interactively. The carve-outs are the
+  load-bearing part — keeping Testcontainers on the test path
+  preserves the constitution Principle II discipline, and forbidding
+  AppHost references from runtime projects keeps the deployment
+  artifact untouched.
+
+- **Alternatives considered**:
+  - Plain `docker compose` only (rejected — v2.10.0 makes the AppHost
+    NON-NEGOTIABLE; compose may remain only as fallback).
+  - `Aspire.Hosting.Testing` for the test path (rejected — explicit
+    v2.10.0 carve-out forbids it; Testcontainers already provides the
+    isolation guarantee and `WebApplicationFactory<Program>` is the
+    canonical integration host).
+  - Embedding the AppHost in `Api` itself (rejected — runtime projects
+    MUST NOT reference the AppHost; that would couple the deployment
+    artifact to a developer-experience tool).
+
+## 15. Out of scope (re-confirmed from `spec.md`)
 
 The following are **not** addressed in this plan:
 
@@ -346,6 +442,7 @@ The following are **not** addressed in this plan:
 | Observability | OTLP single exporter; FusionCache OTel; dashboard at repo root |
 | Tests | xUnit + FluentAssertions + NSubstitute; Testcontainers for IT |
 | Audit purge | `BackgroundService` daily at 03:00 UTC |
+| Local-dev orchestration | `src/AppHost/` .NET Aspire project; `dotnet run --project src/AppHost`; Aspire dashboard = local OTLP endpoint; compose = fallback only; tests stay on Testcontainers |
 
 All `NEEDS CLARIFICATION` markers from the Technical Context are
 resolved by the choices above.

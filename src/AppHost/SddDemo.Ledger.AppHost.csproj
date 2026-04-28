@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.5.0" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SddDemo.Ledger.AppHost</RootNamespace>
+    <AssemblyName>SddDemo.Ledger.AppHost</AssemblyName>
+    <UserSecretsId>sddDemo-ledger-apphost</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AppHost references the Api + the DbUp migrations runner to orchestrate
+         the canonical bring-up. Runtime projects do NOT reference the AppHost
+         back (T088 enforces this in CI). -->
+    <ProjectReference Include="..\Api\SddDemo.Ledger.Api.csproj" />
+    <ProjectReference Include="..\Infrastructure.Migrations\SddDemo.Ledger.Infrastructure.Migrations.csproj" />
+  </ItemGroup>
+
+</Project>

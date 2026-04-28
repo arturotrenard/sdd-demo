@@ -1,0 +1,181 @@
+// Ledger service v1 — gRPC contract (snapshot for /speckit-plan).
+//
+// Source of truth at build time: src/Contracts/Protos/ledger.v1.proto.
+// Drift between this snapshot and the build-time .proto MUST be flagged
+// in review (constitution Principle III).
+//
+// Versioning: this is package v1. Within v1, only additive changes are
+// allowed (new optional fields, new methods, new enum values with
+// `reserved` for any removed ones). Breaking changes ship as v2 in a
+// new package alongside v1.
+//
+// HTTP: all RPCs carry google.api.http annotations so JsonTranscoding
+// emits a complete OpenAPI document via Microsoft.AspNetCore.Grpc.Swagger.
+// The transcoded JSON endpoints exist for documentation/exploration only;
+// production clients MUST use the gRPC channel.
+
+syntax = "proto3";
+
+package sddDemo.ledger.v1;
+
+option csharp_namespace = "SddDemo.Ledger.V1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+
+// ──────────────────────────────────────────────────────────────────────
+// Service
+// ──────────────────────────────────────────────────────────────────────
+
+service Ledgers {
+  // Create a new ledger owned by the caller.
+  rpc CreateLedger (CreateLedgerRequest) returns (LedgerView) {
+    option (google.api.http) = {
+      post: "/v1/ledgers"
+      body: "*"
+    };
+  }
+
+  // Fetch a single ledger by id. Returns NOT_FOUND for missing or
+  // not-owned ledgers (no information leak — FR-009).
+  rpc GetLedger (GetLedgerRequest) returns (LedgerView) {
+    option (google.api.http) = {
+      get: "/v1/ledgers/{id}"
+    };
+  }
+
+  // List the caller's ledgers with keyset pagination.
+  // Default page size 50, max 200. By default returns only Active ledgers;
+  // set include_archived = true to include archived ones.
+  rpc ListLedgers (ListLedgersRequest) returns (ListLedgersResponse) {
+    option (google.api.http) = {
+      get: "/v1/ledgers"
+    };
+  }
+
+  // Update editable attributes of an Active ledger, or transition status.
+  // The request MUST carry the version_token returned by the most recent
+  // read of this ledger; a stale token returns ALREADY_EXISTS (Conflict
+  // mapping in the boundary translator).
+  rpc UpdateLedger (UpdateLedgerRequest) returns (LedgerView) {
+    option (google.api.http) = {
+      patch: "/v1/ledgers/{id}"
+      body: "*"
+    };
+  }
+
+  // Hard-delete the ledger. Audit row remains. version_token must match.
+  rpc DeleteLedger (DeleteLedgerRequest) returns (DeleteLedgerResponse) {
+    option (google.api.http) = {
+      delete: "/v1/ledgers/{id}"
+    };
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────────
+
+enum LedgerStatus {
+  LEDGER_STATUS_UNSPECIFIED = 0; // never sent on the wire by the server.
+  LEDGER_STATUS_ACTIVE = 1;
+  LEDGER_STATUS_ARCHIVED = 2;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — read model
+// ──────────────────────────────────────────────────────────────────────
+
+// Server's view of a ledger, returned by Create/Get/Update.
+// The owner is implicit (resolved from the caller-supplied X-Owner-Id
+// header) and therefore not echoed on the wire.
+message LedgerView {
+  string                       id                = 1; // canonical UUID string
+  string                       name              = 2;
+  string                       description       = 3; // empty string == unset
+  string                       currency_code     = 4; // ISO 4217 alpha-3
+  LedgerStatus                 status            = 5;
+  // Opaque optimistic-concurrency token. Treat as bytes; do NOT inspect.
+  // Must be echoed back on the next Update or Delete (FR-002, FR-007).
+  bytes                        version_token     = 6;
+  google.protobuf.Timestamp    created_at        = 7;
+  google.protobuf.Timestamp    last_modified_at  = 8;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — Create
+// ──────────────────────────────────────────────────────────────────────
+
+message CreateLedgerRequest {
+  string name           = 1; // required, 1..100 chars
+  string description    = 2; // optional, 0..500 chars (empty == unset)
+  string currency_code  = 3; // required, ISO 4217 alpha-3
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — Get
+// ──────────────────────────────────────────────────────────────────────
+
+message GetLedgerRequest {
+  string id = 1; // required, canonical UUID
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — List
+// ──────────────────────────────────────────────────────────────────────
+
+message ListLedgersRequest {
+  // Default: false (only Active). Setting this to true also returns
+  // Archived ledgers in the same page (FR-006).
+  bool   include_archived = 1;
+
+  // Opaque keyset cursor returned by a previous ListLedgersResponse.
+  // Empty string == "first page".
+  string page_cursor      = 2;
+
+  // 1..200; if 0 the server uses the default of 50.
+  int32  page_size        = 3;
+}
+
+message ListLedgersResponse {
+  repeated LedgerView ledgers              = 1;
+
+  // Empty string when there are no more pages. Pass this back to
+  // ListLedgersRequest.page_cursor to fetch the next page.
+  string              next_page_cursor     = 2;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — Update
+// ──────────────────────────────────────────────────────────────────────
+
+message UpdateLedgerRequest {
+  string                       id                 = 1; // required
+  bytes                        version_token      = 2; // required (FR-007)
+
+  // Editable fields. Use update_mask to declare which fields the server
+  // should apply; fields not listed in the mask are ignored even if set.
+  // (Status changes are also driven by the mask: include "status" to
+  // archive or un-archive.)
+  string                       name               = 3;
+  string                       description        = 4;
+  LedgerStatus                 status             = 5;
+
+  google.protobuf.FieldMask    update_mask        = 6;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Messages — Delete
+// ──────────────────────────────────────────────────────────────────────
+
+message DeleteLedgerRequest {
+  string id            = 1; // required
+  bytes  version_token = 2; // required
+}
+
+message DeleteLedgerResponse {
+  // Intentionally empty. A successful delete is signalled by the absence
+  // of an RpcException; clients that want a confirmation timestamp can
+  // observe the audit log (admin/ops only).
+}

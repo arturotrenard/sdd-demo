@@ -88,8 +88,8 @@ enum LedgerStatus {
 // ──────────────────────────────────────────────────────────────────────
 
 // Server's view of a ledger, returned by Create/Get/Update.
-// The owner is implicit (the authenticated caller) and therefore not
-// echoed on the wire — see Principle V architectural readiness.
+// The owner is implicit (resolved from the caller-supplied X-Owner-Id
+// header) and therefore not echoed on the wire.
 message LedgerView {
   string                       id                = 1; // canonical UUID string
   string                       name              = 2;

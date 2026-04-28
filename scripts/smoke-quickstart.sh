@@ -11,14 +11,19 @@
 # gRPC server → handler → repository → SQL → audit insert per quickstart §5.4).
 #
 # Usage:
-#   GRPC_HOST=localhost:5001 OWNER=<uuid> scripts/smoke-quickstart.sh
+#   GRPC_HOST=localhost:5001 scripts/smoke-quickstart.sh
+#   GRPC_HOST=localhost:5001 OWNER=<uuid> scripts/smoke-quickstart.sh   # override
+#
+# OWNER defaults to the Development fallback UUID configured in
+# src/Api/appsettings.Development.json (Identity:DevOwnerId). Override
+# only when smoking against a non-Development deployment.
 #
 # Prereqs: grpcurl, jq.
 
 set -euo pipefail
 
 GRPC_HOST="${GRPC_HOST:?set GRPC_HOST=host:port (e.g. localhost:5001)}"
-OWNER="${OWNER:?set OWNER=<uuid> (the X-Owner-Id used for the smoke flow)}"
+OWNER="${OWNER:-11111111-1111-1111-1111-111111111111}"
 PROTO_FILE="${PROTO_FILE:-src/Contracts/Protos/ledger.v1.proto}"
 PROTO_IMPORT="${PROTO_IMPORT:-src/Contracts/Protos}"
 GRPCURL_BASE=(grpcurl -import-path "$PROTO_IMPORT" -proto "$PROTO_FILE" -H "x-owner-id: $OWNER")

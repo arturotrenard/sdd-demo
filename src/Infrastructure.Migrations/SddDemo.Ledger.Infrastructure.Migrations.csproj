@@ -1,21 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>SddDemo.Ledger.Infrastructure.Migrations</RootNamespace>
     <AssemblyName>SddDemo.Ledger.Infrastructure.Migrations</AssemblyName>
-    <!-- EF-generated migration files use array literals at call sites — codegen output;
-         CA1861 ("prefer static readonly arrays") doesn't apply. -->
-    <NoWarn>$(NoWarn);CA1861</NoWarn>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Application\SddDemo.Ledger.Application.csproj" />
+    <PackageReference Include="dbup-core" />
+    <PackageReference Include="dbup-postgresql" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- SQL scripts ship as embedded resources so DbUp's
+         AssemblyResourceJournal can stream them deterministically. -->
+    <EmbeddedResource Include="Scripts\*.sql" />
   </ItemGroup>
 
 </Project>

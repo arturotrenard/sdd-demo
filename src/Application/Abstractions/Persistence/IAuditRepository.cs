@@ -1,4 +1,5 @@
 using Npgsql;
+using SddDemo.Ledger.Domain.Auditing;
 using SddDemo.Ledger.Domain.Common;
 
 namespace SddDemo.Ledger.Application.Abstractions.Persistence;
@@ -12,7 +13,7 @@ namespace SddDemo.Ledger.Application.Abstractions.Persistence;
 public interface IAuditRepository
 {
     Task<Result> WriteAsync(
-        AuditEntryToWrite entry,
+        AuditEntry entry,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken);
@@ -21,15 +22,3 @@ public interface IAuditRepository
         TimeSpan retention,
         CancellationToken cancellationToken);
 }
-
-/// <summary>
-/// Plain DTO carrier for the audit row that the repository will write.
-/// The real Domain <c>AuditEntry</c> aggregate (with Builder + invariants) lands in
-/// Phase 3 (T045). Until then this DTO exposes the columns the SQL expects.
-/// </summary>
-public sealed record AuditEntryToWrite(
-    Guid ActorId,
-    Guid LedgerId,
-    short EventType,
-    DateTimeOffset EventAt,
-    System.Text.Json.JsonDocument Payload);

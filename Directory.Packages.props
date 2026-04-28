@@ -21,11 +21,12 @@
     <!-- Persistence -->
     <PackageVersion Include="Npgsql" Version="10.0.0" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="10.0.0" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0" />
     <PackageVersion Include="Dapper" Version="2.1.66" />
+
+    <!-- Schema migrations — DbUp (Constitution v2.11.0). EF is no longer in the
+         tech stack; raw idempotent SQL scripts are the migration unit. -->
+    <PackageVersion Include="dbup-core" Version="6.0.4" />
+    <PackageVersion Include="dbup-postgresql" Version="6.0.3" />
 
     <!-- Caching -->
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.0.0" />
@@ -36,6 +37,7 @@
 
     <!-- DI extensions -->
     <PackageVersion Include="Scrutor" Version="6.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />

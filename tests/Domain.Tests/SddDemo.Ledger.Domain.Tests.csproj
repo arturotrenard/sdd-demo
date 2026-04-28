@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Domain\SddDemo.Ledger.Domain.csproj" />
+    <!-- CurrencyCatalog (concrete ICurrencyCatalog) lives in Infrastructure;
+         tests need the real catalog to exercise ValidIsoCurrencyAttribute. -->
+    <ProjectReference Include="..\..\src\Infrastructure\SddDemo.Ledger.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

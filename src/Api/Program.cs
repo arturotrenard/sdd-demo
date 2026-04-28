@@ -15,11 +15,13 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using SddDemo.Ledger.Api.Caching;
 using SddDemo.Ledger.Api.Configuration;
+using SddDemo.Ledger.Api.Grpc;
 using SddDemo.Ledger.Api.Grpc.Interceptors;
 using SddDemo.Ledger.Api.Health;
 using SddDemo.Ledger.Api.Observability;
 using SddDemo.Ledger.Application.Abstractions.Identity;
 using SddDemo.Ledger.Application.Abstractions.Persistence;
+using SddDemo.Ledger.Application.Features.Ledgers.Commands.CreateLedger;
 using SddDemo.Ledger.Infrastructure.Background;
 using SddDemo.Ledger.Infrastructure.Currency;
 using SddDemo.Ledger.Infrastructure.Identity;
@@ -58,11 +60,13 @@ if (!string.IsNullOrWhiteSpace(pgConnection))
     builder.Services.AddLedgerDataSource(pgConnection);
 }
 
-// Repositories land in Phase 3+ (Scrutor-decorated with CachingLedgerRepository).
-// Phase 2 leaves the registration slot reserved.
-//   builder.Services.AddScoped<ILedgerRepository, LedgerRepository>();
-//   builder.Services.Decorate<ILedgerRepository, CachingLedgerRepository>();
-builder.Services.AddScoped<IAuditRepository, NotImplementedAuditRepository>();
+builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+builder.Services.AddScoped<ILedgerRepository, LedgerRepository>();
+builder.Services.Decorate<ILedgerRepository, CachingLedgerRepository>();
+
+// Application handlers (CQRS via folders + DI per Constitution Principle VI).
+builder.Services.AddScoped<CreateLedgerHandler>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 // --- Caching (FusionCache L1 + Redis L2 + Backplane) -----------------------------------------
 
@@ -98,7 +102,15 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 // Constitution Principle V > Always-on — HTTPS hardening outside Development.
-if (!app.Environment.IsDevelopment())
+// Gated by Hardening:EnforceHttpsRedirection so integration tests over the in-memory
+// HTTP test server (which has no HTTPS endpoint) can disable the middleware without
+// having to bypass the Production environment as a whole.
+var enforceHttps = app.Configuration
+    .GetSection("Hardening")
+    .GetValue<bool?>("EnforceHttpsRedirection")
+    ?? !app.Environment.IsDevelopment();
+
+if (enforceHttps)
 {
     app.UseHsts();
     app.UseHttpsRedirection();
@@ -111,27 +123,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapLedgerHealthChecks();
-
-// gRPC service mapping lands in Phase 3+ (LedgersService).
-//   app.MapGrpcService<LedgersService>();
+app.MapGrpcService<LedgersService>();
 
 await app.RunAsync().ConfigureAwait(false);
 
 // Required for WebApplicationFactory<Program> in tests/Api.IntegrationTests.
 public partial class Program;
-
-// Phase 2 stub — replaced in Phase 3+ when AuditRepository (Dapper) lands.
-file sealed class NotImplementedAuditRepository : IAuditRepository
-{
-    public Task<SddDemo.Ledger.Domain.Common.Result> WriteAsync(
-        AuditEntryToWrite entry,
-        Npgsql.NpgsqlConnection connection,
-        Npgsql.NpgsqlTransaction transaction,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(SddDemo.Ledger.Domain.Common.Result.Success());
-
-    public Task<SddDemo.Ledger.Domain.Common.Result<int>> PurgeOlderThanAsync(
-        TimeSpan retention,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(SddDemo.Ledger.Domain.Common.Result<int>.Success(0));
-}

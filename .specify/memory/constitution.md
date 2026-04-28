@@ -1,6 +1,116 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 2.11.0 → 3.0.0
+Bump rationale: MAJOR. Removes authentication and authorization from the
+  constitution's scope. Principle V is renamed "Operational Hardening" and
+  now governs only: TLS / HTTPS / HSTS, secrets management, server-side
+  input validation, and vulnerable-dependency scanning. The "Scope —
+  on-premise deployment, authn/authz deferred" sub-section, the "Deferred
+  rules" sub-section (`[Authorize]`, anonymous opt-in, auth interceptors,
+  authorization policies), the "Architectural readiness" sub-section
+  (`ICurrentUser` / `ITenantContext` stubs, gateway-supplied identity
+  header pattern, Dev fallback for identity headers, automatic
+  re-activation triggers), and the auth-related portion of the Rationale
+  are all removed. Side-effects: (i) `ErrorType.Unauthorized` is removed
+  from the canonical Result-pattern enum; (ii) the gRPC mapping table
+  loses the `Unauthorized → Unauthenticated` row; (iii) the quarterly
+  Principle V audit drops question (2) about the auth re-activation
+  trigger; (iv) the in-flight audit entry "From 2.9.0" (auth-stub
+  preservation) and the "Dev-fallback-for-identity-header" sub-bullet of
+  "From 2.10.2" are removed; (v) the pre-existing "Follow-up TODO" about
+  the auth re-activation trigger is removed. Services that need an owner
+  or tenant key for ownership scoping or audit-actor logging are free to
+  introduce one as a feature-level concern (e.g., a header-driven
+  `ICurrentUser` returning `Result<Guid>` with `ErrorType.Validation` on
+  malformed input); the constitution no longer mandates such a seam.
+  Historical changelog entries below are preserved verbatim — the
+  v2.9.0 / v2.10.2 entries remain as a record of why prior versions
+  required identity stubs, even though that requirement is now lifted.
+  This is a deliberate scope contraction, not a security regression: the
+  always-on rules (TLS, secrets, validation, dependency scanning) remain
+  fully load-bearing.
+
+Modified principles:
+  - Principle V: "Security by Default" → "Operational Hardening". Active
+    scope reduced to TLS, secrets, server-side validation, and dependency
+    scanning. All authn/authz material removed.
+
+Modified sections:
+  - Result-pattern enum example: `Unauthorized` member removed.
+  - gRPC error-mapping table: `Unauthorized → Unauthenticated` row removed.
+  - Quarterly compliance audit: V question (2) (auth re-activation trigger)
+    removed.
+  - In-flight artifact audit: "From 2.9.0" entry removed in full;
+    "From 2.10.2" entry trimmed to (i) `ASPNETCORE_ENVIRONMENT`
+    forwarding only — the (ii) identity-Dev-fallback sub-bullet removed.
+  - Follow-up TODOs: auth re-activation trigger entry removed.
+  - Principle III rationale: "one ingress story, one auth model" trimmed
+    to "one ingress story" — auth model is no longer an axis the
+    constitution governs.
+  - Decorator examples: "auth enrichment" removed from the list of
+    canonical decorator use-cases.
+  - AppHost `ASPNETCORE_ENVIRONMENT` forwarding rationale: parenthetical
+    "AnonymousCurrentUser Dev fallback under Principle V" removed —
+    Principle V no longer mentions Dev fallbacks.
+
+Earlier amendment (preserved):
+Version change: 2.10.2 → 2.11.0
+Bump rationale: MINOR. Names **DbUp** as the sanctioned schema-migration
+  tool and ratifies the **Aspire init-container migrator pattern** as the
+  canonical way to apply schema during local dev bring-up — no manual
+  schema step is permitted in the dev loop. The `Infrastructure.Migrations`
+  project is a Generic Host console (`Microsoft.NET.Sdk` +
+  `OutputType=Exe`) running a `BackgroundService` that invokes DbUp against
+  the Aspire-injected connection string, then signals
+  `IHostApplicationLifetime.StopApplication`. The AppHost registers it via
+  `AddProject<TMigrator>("migrator").WithReference(postgres).WaitFor(postgres)`
+  and the Api waits for it via `.WaitFor(migrator)` (NOT
+  `.WaitForCompletion(migrator)` — Aspire 9.5 does not reliably transition
+  short-lived `dotnet run` projects to "Finished", so dependents stay queued
+  forever; `WaitFor` waits on "Running", which the Generic Host reaches
+  before `BackgroundService.ExecuteAsync` fires the actual migration). The
+  `Aspire init-container migrator` rule is added under Tech Stack > Local
+  development orchestration. Persistence > Schema management bullet is
+  rewritten to specify DbUp + numbered append-only SQL scripts. Earlier
+  patches (2.10.1 launchSettings.json, 2.10.2 ASPNETCORE_ENVIRONMENT
+  forwarding + Dev identity fallback) are preserved unchanged.
+
+Earlier amendment (preserved):
+Version change: 2.10.1 → 2.10.2
+Bump rationale: PATCH. Tightens the v2.10.0 "canonical bring-up" promise
+  with two further missing-precondition rules surfaced during 001-ledger-crud:
+  (a) Aspire 9.x does NOT auto-propagate `ASPNETCORE_ENVIRONMENT` to child
+  project resources, so the AppHost's `AddProject<T>("api")` call MUST
+  forward it explicitly (`.WithEnvironment("ASPNETCORE_ENVIRONMENT",
+  builder.Environment.EnvironmentName)`); without this the Api boots in
+  Production and Development-gated middleware (Swagger, dev exception
+  pages) silently disappears even though the AppHost itself is in
+  Development. (b) When a service relies on a trusted-gateway-supplied
+  identity header (e.g. `X-Owner-Id`) per Principle V's on-prem auth-deferred
+  rules, `src/Api/appsettings.Development.json` MUST exist and MUST populate
+  the corresponding Dev fallback config (e.g. `Identity:DevOwnerId`) so
+  `dotnet run --project src/AppHost` reaches the Swagger happy path without
+  the developer having to hand-craft the header on every request. Both rules
+  are clarifications of existing principles, not new principles — no
+  semantic change.
+
+Earlier amendment (preserved):
+Version change: 2.10.0 → 2.10.1
+Bump rationale: PATCH. Clarification of the existing "Local development
+  orchestration — .NET Aspire AppHost (NON-NEGOTIABLE)" bullet: the AppHost
+  MUST ship `Properties/launchSettings.json` because Aspire 9.x reads
+  `ASPNETCORE_URLS`, `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL`, and
+  `ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL` from there at startup. Without it
+  `dotnet run --project src/AppHost` throws
+  `OptionsValidationException: ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL ... is
+  not set` before any resource is provisioned, which silently breaks the
+  v2.10.0 "canonical bring-up" promise. No principle semantics change;
+  this is purely a missing-precondition fix surfaced during the
+  001-ledger-crud feature. (See note at v2.10.0 below for the prior
+  amendment.)
+
+Earlier amendment (preserved):
 Version change: 2.9.0 → 2.10.0
 Bump rationale: MINOR. Tech Stack gains a new "Local development
   orchestration" bullet that mandates a .NET Aspire `*.AppHost` project
@@ -47,20 +157,45 @@ Earlier history (oldest first):
   - 2.5.0 → 2.6.0 (MINOR): Principle IV adopted `dotnet-observability` 5-phase
     flow; dashboards versioned as `monitoring/<service>.json`; Tech Stack
     gained "Observability backends" bullet.
-  - 2.6.0 → 2.7.0 (MINOR): Persistence split into EF (migrations only) +
-    Dapper (runtime CRUD) over Npgsql.
+  - 2.6.0 → 2.7.0 (MINOR): Persistence split into a dedicated schema-
+    migration sub-project + Dapper (runtime CRUD) over Npgsql.
   - 2.7.0 → 2.8.0 (MINOR): consistency/ambiguity fixes from the 2.7.0
     internal review + Builder pattern for Domain construction + Data
     Annotations / `IValidatableObject` for validation (no bare `if` in
     Builders or handlers); `monitoring/` pinned to repo root; boundary
     translator named (`Api/Grpc/ResultToRpcExceptionMapper.cs`); coverage
     gate clarified as patch coverage; quarterly audit gained Principle VI;
-    `EfUserRepository` examples updated to `DapperUserRepository`;
+    repository examples updated to `DapperUserRepository`;
     `Infrastructure` layer-structure description aligned with the Dapper +
     Npgsql + sibling-`Infrastructure.Migrations` model.
   - 2.8.0 → 2.8.1 (PATCH): Principle VI Validation rule scope made explicit
     — Data Annotations apply to every DTO-shaped type; protobuf messages
     and interceptor logic are explicit carve-outs.
+  - 2.10.0 → 2.10.1 (PATCH): clarify that the mandatory AppHost MUST ship
+    `Properties/launchSettings.json` defining `ASPNETCORE_URLS`,
+    `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL`, and
+    `ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL` (HTTPS by default; HTTP only
+    with `ASPIRE_ALLOW_UNSECURED_TRANSPORT=true`) — without it Aspire 9.x
+    fails startup before the dashboard binds.
+  - 2.10.2 → 2.11.0 (MINOR): names **DbUp** as the sanctioned schema-
+    migration tool and ratifies the Aspire init-container migrator pattern
+    as the canonical schema-application path during dev bring-up.
+    `Infrastructure.Migrations` is a Generic Host console running a
+    `BackgroundService` that invokes DbUp against the Aspire-injected
+    `ConnectionStrings:ledger`, then calls `StopApplication`. The AppHost
+    chains it as `AddProject<TMigrator>("migrator").WithReference(postgres).WaitFor(postgres)`,
+    and the Api uses `.WaitFor(migrator)` so the Api boots only after the
+    migrator host reaches "Running". Manual schema-application steps are
+    forbidden in feature quickstarts.
+  - 2.10.1 → 2.10.2 (PATCH): two further canonical-bring-up clarifications:
+    (a) the AppHost's `AddProject<T>` for the service MUST forward
+    `ASPNETCORE_ENVIRONMENT` to the child via `.WithEnvironment(...)`
+    because Aspire 9.x does not auto-propagate it, and Dev-gated middleware
+    (Swagger, dev exception pages) silently disappears otherwise; (b) when
+    a service uses a trusted-gateway-supplied identity header per
+    Principle V's on-prem deferred-auth model, the service MUST ship
+    `appsettings.Development.json` populating the Dev fallback config so
+    Swagger / quickstart reaches the happy path without manual headers.
   - 2.8.1 → 2.9.0 (MINOR): Principle V restructured for on-premise
     deployment — authn/authz explicitly deferred (services run anonymously
     inside the trusted boundary); always-on rules (TLS, secrets, validation,
@@ -79,11 +214,14 @@ Templates requiring updates (cumulative):
     Structure block. (Per 2.10.0)
   - ✅ .specify/templates/spec-template.md — No principle-driven sections affected.
   - ⚠️ .specify/templates/tasks-template.md — Service scaffolding tasks SHOULD
-    produce: (a) `Infrastructure.Migrations` sub-project holding the EF
-    `DbContext` used only by `dotnet ef`; (b) `Npgsql` + `Dapper` package
-    references and `AddNpgsqlDataSource(...)` in `Api`'s `Program.cs`;
-    (c) `Infrastructure/Sql/` folder for embedded SQL resources when needed;
-    (d) initial migration committed alongside the first repo;
+    produce: (a) `Infrastructure.Migrations` Generic Host console
+    sub-project (`Microsoft.NET.Sdk` + `OutputType=Exe`) running a
+    `BackgroundService` that invokes DbUp against
+    `ConnectionStrings:<service>`, with `Scripts/NNNN_*.sql` embedded
+    resources; (b) `Npgsql` + `Dapper` package references and
+    `AddNpgsqlDataSource(...)` in `Api`'s `Program.cs`;
+    (c) `Infrastructure/Sql/` folder for embedded runtime SQL resources;
+    (d) initial `Scripts/0001_Initial.sql` committed alongside the first repo;
     (e) `Domain/DomainValidator.cs` helper running
     `Validator.TryValidateObject(...)` and aggregating `ValidationResult`
     lists into `Result.Failure(Validation)`; (f)
@@ -101,12 +239,17 @@ Templates requiring updates (cumulative):
     solution file, and the canonical local bring-up step documented as
     `dotnet run --project src/AppHost` (replacing any standalone
     `docker-compose.dev.yml`-only bring-up; compose may remain as fallback).
+    (Per 2.10.1) The AppHost scaffolding task MUST also produce
+    `src/AppHost/Properties/launchSettings.json` with an `https` profile
+    setting `applicationUrl`, `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL`, and
+    `ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL` — without this file Aspire 9.x
+    throws at host build time and the canonical bring-up never reaches
+    the dashboard.
 
 In-flight artifact audit required (cumulative):
-  - From 2.7.0: any existing `Infrastructure/Repositories/Ef*.cs` or
-    `DbContext`-injecting repositories MUST be ported to `Dapper*` over
-    `NpgsqlDataSource`. The public `IXxxRepository` contract returning
-    `Result<T>` does not change.
+  - From 2.7.0: runtime repository implementations MUST be Dapper-based
+    over a pooled `NpgsqlDataSource` (no ORM at the runtime path). The
+    public `IXxxRepository` contract returning `Result<T>` is unchanged.
   - From 2.8.0: (i) any Domain type with a public constructor MUST gain a
     nested `sealed Builder`, make its constructor private, and route
     construction through `Builder().With...().Build()`; (ii) any factory or
@@ -121,14 +264,6 @@ In-flight artifact audit required (cumulative):
     any imperative `if`-validation in DTO-bound code MUST be rewritten as a
     `ValidationAttribute` or `IValidatableObject.Validate` call routed
     through `DomainValidator.Validate<T>`.
-  - From 2.9.0: any service that currently has `[Authorize]` / auth
-    interceptors purely "for completeness" while the rules are deferred MAY
-    be simplified to anonymous, but the architectural insertion points
-    (interceptor chain registration, identity DI seams) MUST stay so
-    re-engagement is configuration. Conversely, any service that has
-    silently shipped beyond on-prem (cloud, multi-tenant, untrusted
-    clients) WITHOUT re-engaging the deferred auth rules is non-compliant
-    and MUST be remediated immediately — the trigger is automatic.
   - From 2.10.0: (i) any service whose only local-dev bring-up is
     `docker compose up` MUST add an `src/AppHost/` Aspire project; the
     compose file MAY remain as a fallback per the carve-out in the new
@@ -139,12 +274,33 @@ In-flight artifact audit required (cumulative):
     using `Aspire.Hosting.Testing` / `DistributedApplicationTestingBuilder`
     on the canonical test path MUST be reverted to Testcontainers per
     Principle II — Aspire is not a test host.
+  - From 2.10.1: any existing `src/AppHost/` project that lacks
+    `Properties/launchSettings.json` MUST add it before merge. The file
+    MUST define at least an `https` profile with `applicationUrl`,
+    `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL`, and
+    `ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL`. Verification: a clean
+    `dotnet run --project src/AppHost` MUST start the dashboard without
+    `OptionsValidationException`. CI SHOULD fail if the file is missing.
+  - From 2.11.0: (i) `Infrastructure.Migrations` MUST be a Generic Host
+    console (Microsoft.NET.Sdk + `OutputType=Exe`) running a
+    `BackgroundService` that invokes DbUp against
+    `ConnectionStrings:<service>` and then calls `StopApplication`;
+    SQL ships under `Scripts/NNNN_*.sql` as embedded resources.
+    (ii) Every AppHost MUST register the migrator as an init-container
+    resource (see Local development orchestration) and the Api MUST
+    `.WaitFor(migrator)` — builds without this wiring are review
+    blockers. (iii) Every feature `quickstart.md` MUST state that schema
+    is applied automatically by the migrator init-container; manual
+    schema-application steps MUST NOT appear. Verification: a fresh
+    `dotnet run --project src/AppHost` against an empty Postgres volume
+    MUST yield a 2xx on a representative POST without ANY manual schema
+    step.
+  - From 2.10.2: every existing AppHost `Program.cs` MUST chain
+    `.WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)`
+    on every `AddProject<TService>(...)` call; missing forwarding is a
+    review blocker.
 
 Follow-up TODOs:
-  - When the auth re-activation trigger fires (per Principle V scope), open
-    an issue tagged `security:auth-reactivation` to wire the deferred rules
-    into the active codebase before any further feature work on the
-    affected service.
   - (2.10.0) None beyond the in-flight audit above; this amendment is
     purely additive at the Tech Stack layer with explicit non-goals
     (tests stay on Testcontainers; production stays on plain containers).
@@ -293,7 +449,7 @@ operations.**
 **Rationale**: gRPC gives strong typing, code generation, bidirectional streaming,
 and substantially lower latency than REST for service-to-service calls — which is
 the dominant traffic shape for this system. Restricting HTTP to health + Swagger
-keeps the operational surface small (one ingress story, one auth model) while still
+keeps the operational surface small (one ingress story) while still
 giving humans a browsable contract via Swagger UI. Locking documentation to
 `Microsoft.AspNetCore.Grpc.Swagger` (rather than hand-maintained OpenAPI) prevents
 the doc from drifting away from the wire format — `.proto` is the single source of
@@ -398,33 +554,20 @@ pressure costs hours. The `dotnet-observability` skill turns observability from
 gates at each step — and it commits the dashboard alongside the code, so the
 operational view of the service evolves in lockstep with the service itself.
 
-### V. Security by Default
+### V. Operational Hardening
 
-Security is not an optional cross-cutting concern.
+Operational hardening is not an optional cross-cutting concern. Authentication
+and authorization are **outside the scope of this constitution** (per v3.0.0):
+services do not implement an auth model, do not declare `[Authorize]`, do not
+ship identity-stub abstractions as a constitutional readiness requirement, and
+do not gate endpoints by caller identity at the framework layer. Features that
+need an owner / tenant key for ownership scoping or audit-actor logging are
+free to introduce one as a feature-level concern (e.g., a header-driven
+`ICurrentUser` returning `Result<Guid>` with `ErrorType.Validation` on
+malformed input) — that is a feature design choice, not a constitutional
+mandate.
 
-**Scope — on-premise deployment, authn/authz deferred.**
-
-This system targets an on-premise deployment behind a trusted network
-boundary. **Authentication and authorization are explicitly deferred** to a
-future implementation phase; services run anonymously inside that boundary
-for now. The remainder of this principle (TLS, secrets, input validation,
-dependency scanning) is **NOT** deferred — those rules apply day one.
-
-The deferral is bounded by an automatic re-activation trigger: the auth rules
-in the "Deferred" sub-section below **re-engage as MUST** the moment any of
-the following becomes true, with no further amendment required —
-
-- a service ships beyond the on-premise network (cloud, hybrid, partner
-  network, internet exposure);
-- a service serves more than one tenant or trust zone;
-- the deployment introduces an untrusted client (third-party integration,
-  customer-facing UI, mobile, etc.).
-
-When that day comes, the deferred bullets become enforceable as written
-(without revision); contributors MUST surface the trigger in `plan.md`'s
-Constitution Check.
-
-**Always-on rules.**
+The four rules below apply day one and are non-negotiable.
 
 - **HTTPS / TLS MUST be enforced.** gRPC requires HTTP/2; even on-premise
   traffic MUST be TLS-terminated at the service or at a trusted ingress.
@@ -435,56 +578,23 @@ Constitution Check.
   environment variables / Key Vault / on-prem secret manager (HashiCorp Vault,
   etc.) in deployed environments. No secrets in `appsettings.*.json` checked
   into git, regardless of deployment target.
-- **All inputs MUST be validated server-side.** This rule is independent of
-  authentication and applies in full (Principle VI > Validation tiers covers
-  the mechanism). Anti-forgery tokens do **not** apply to gRPC; if any future
-  cookie-authenticated state-changing HTTP endpoint is justified per
-  Principle III, it MUST carry anti-forgery protection.
+- **All inputs MUST be validated server-side.** Principle VI > Validation
+  tiers covers the mechanism (Data Annotations + `IValidatableObject` routed
+  through `DomainValidator.Validate<T>`). Anti-forgery tokens do **not** apply
+  to gRPC; any future cookie-driven state-changing HTTP endpoint justified
+  under Principle III MUST carry anti-forgery protection.
 - **Dependencies MUST be scanned**
   (`dotnet list package --vulnerable --include-transitive`) on CI; high-severity
   advisories block merge.
 
-**Deferred rules (re-engage on the trigger above).**
-
-- Every gRPC service authenticated by default (`[Authorize]` on the service
-  class); anonymous access opt-in via explicit `[AllowAnonymous]`. HTTP-sidecar
-  carve-outs: `/health/live` MAY be anonymous; Swagger UI MUST be anonymous
-  in `Development` only and disabled or policy-protected in deployed
-  environments.
-- Authorization policies declared in code, not by string-typed role checks.
-- Cross-cutting auth concerns (token introspection, tenant resolution)
-  implemented as gRPC `Interceptor`s, not duplicated per service.
-
-**Architectural readiness (always-on, even while auth is deferred).**
-
-The codebase MUST stay **shaped** so that re-engaging the deferred rules is
-a configuration change, not a refactor:
-
-- gRPC `Interceptor`s remain the single insertion point for cross-cutting
-  concerns (Principle VI already mandates this for logging, validation, and
-  the safety net). Auth interceptors slot into the same chain.
-- Identity-bearing types (e.g., `ICurrentUser`, `ITenantContext`) MAY be
-  introduced as DI services with **anonymous-stub implementations** today,
-  so handlers compile-time depend on them and the future swap to a real
-  implementation has zero handler diff. This is OPTIONAL for the deferral
-  window — but if a feature already needs to differentiate behavior by
-  caller identity (e.g., audit logging), the stub-now approach is REQUIRED.
-- Swagger UI on the HTTP sidecar SHOULD still be Development-only by default
-  even in the deferral window, since the on-prem perimeter is not a license
-  to expose the full API surface to every user inside it.
-
-**Rationale**: On-premise + trusted-network is a real deployment context and
-deserves real consideration — paying for OAuth/OIDC plumbing on a system
-that lives entirely behind a firewall is overhead without payoff. But
-"on-prem" is a property of *deployment*, not of *code*: keeping the
-architectural insertion points (interceptors, identity DI) in place means
-the day the system grows past the perimeter (cloud, multi-tenant, partner
-integration) we don't pay an architectural debt — only a configuration cost.
-The automatic re-activation trigger ensures this deferral is a stated scope
-choice rather than a forgotten omission. Until then, the always-on rules
-(TLS, secrets, validation, dependency scanning) are still load-bearing — an
-on-prem perimeter does not protect against insider mistakes, supply-chain
-vulnerabilities, or accidentally-committed credentials.
+**Rationale**: This system targets an on-premise deployment behind a trusted
+network boundary, and the constitution does not pretend to govern the auth
+model that future deployments may or may not need. The four rules above are
+the load-bearing operational guarantees that an on-prem perimeter does not
+provide on its own: an internal network does not stop insider mistakes,
+supply-chain CVEs, accidentally-committed credentials, or unvalidated input
+from corrupting state. Keeping this principle scoped to those four rules
+means it stays applicable regardless of the deployment topology.
 
 ### VI. Design & Structure
 
@@ -504,10 +614,11 @@ src/
                    Depends on Domain only.
   Infrastructure/  Dapper repositories over Npgsql, message bus, outbound
                    HTTP/gRPC clients, secrets, etc. Depends on Application
-                   (implements its ports). Never on Api. (EF Core migrations
-                   live in a sibling Infrastructure.Migrations sub-project per
-                   Tech Stack > Persistence — physically isolated so the
-                   migration DbContext cannot leak into runtime DI.)
+                   (implements its ports). Never on Api. (DbUp migrations
+                   live in a sibling Infrastructure.Migrations console
+                   sub-project per Tech Stack > Persistence — physically
+                   isolated so no EF/migration DI surface exists in runtime
+                   composition.)
   Contracts/       .proto files (under Protos/) plus the generated gRPC service
                    base classes and message types. Redistributable to consumer
                    services as a NuGet package. Depends on nothing inside src/.
@@ -586,7 +697,7 @@ propagation MUST use a `Result<T>` value, not thrown exceptions:
 
   public enum ErrorType
   {
-      Validation, NotFound, Conflict, Unauthorized, Forbidden, Failure
+      Validation, NotFound, Conflict, Forbidden, Failure
   }
 
   public readonly record struct Result<T>
@@ -726,7 +837,6 @@ propagation MUST use a `Result<T>` value, not thrown exceptions:
   | `Validation`  | `InvalidArgument`      |
   | `NotFound`    | `NotFound`             |
   | `Conflict`    | `AlreadyExists`        |
-  | `Unauthorized`| `Unauthenticated`      |
   | `Forbidden`   | `PermissionDenied`     |
   | `Failure`     | `Internal`             |
 
@@ -814,8 +924,8 @@ Specific pattern mandates:
 
   Hand-rolled decoration (manually unwrapping `ServiceDescriptor` to re-register
   the inner) is forbidden — it is the exact problem Scrutor exists to solve.
-  Before introducing **any** decorator (caching, logging, retry, timing, auth
-  enrichment, etc.), the contributor MUST first confirm that the wiring goes
+  Before introducing **any** decorator (caching, logging, retry, timing,
+  etc.), the contributor MUST first confirm that the wiring goes
   through `services.Decorate<>()`.
 - **Result-pattern interaction for caching decorators**: a caching decorator
   MUST cache only `Result.Success` values; `Result.Failure` MUST NOT be cached
@@ -917,6 +1027,64 @@ codebase honest about complexity.
   - **Quickstart obligation**: every feature's `quickstart.md` MUST document
     `dotnet run --project src/AppHost` as the primary bring-up step; any
     compose-based recipe MUST be labeled "fallback".
+  - **`Properties/launchSettings.json` is MANDATORY** (per 2.10.1). The AppHost
+    project MUST ship `src/AppHost/Properties/launchSettings.json` defining
+    at least one profile (canonical: `https`) that sets:
+    - `applicationUrl` — the AppHost listen URL (HTTPS by default; HTTP is
+      only permitted when `ASPIRE_ALLOW_UNSECURED_TRANSPORT=true` is also
+      set in the same profile, e.g. for SDK-less CI smoke jobs).
+    - `ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL` — the local OTLP endpoint that
+      doubles as the Principle IV collector (see "Observability backends").
+    - `ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL` — the dashboard's resource
+      service endpoint.
+    Rationale: Aspire 9.x validates these at host build time and throws
+    `OptionsValidationException` *before* any resource is provisioned if
+    they are missing. Omitting this file silently breaks the canonical
+    bring-up promise above. Tasks templates MUST include a setup task
+    that creates this file alongside `<Service>.AppHost.csproj`. The
+    `dotnet new aspire-apphost` template is the reference layout.
+  - **Schema migrations run as an Aspire init-container — MANDATORY**
+    (per 2.11.0). The `Infrastructure.Migrations` console (see Tech Stack >
+    Persistence > Schema management) MUST be registered in the AppHost as
+    a project resource that the service waits on:
+    ```csharp
+    var migrator = builder
+        .AddProject<Projects.<Service>_Infrastructure_Migrations>("migrator")
+        .WithReference(postgres)
+        .WaitFor(postgres);
+
+    builder.AddProject<Projects.<Service>_Api>("api")
+        // ... env + references ...
+        .WaitFor(migrator);    // NOT WaitForCompletion — see rationale.
+    ```
+    Rationale for `WaitFor` (not `WaitForCompletion`): in Aspire 9.5,
+    `dotnet run` of a short-lived `Microsoft.NET.Sdk` console exits before
+    DCP's resource state reconciler captures a "Finished" transition, so
+    `WaitForCompletion` blocks dependents indefinitely. `WaitFor` waits on
+    "Running", which the Generic Host reaches just before
+    `BackgroundService.ExecuteAsync` fires — giving the migrator a small
+    head start before the Api's first DB request. The race is acceptable
+    only because: (a) the AppHost is a dev-only artifact (Production runs
+    the migrator console as a separate step in the deploy pipeline);
+    (b) the Api's first DB query happens at request time, not startup;
+    (c) DbUp's `schemaversions` row write is part of the migration
+    transaction, so partial-apply is impossible. Manual schema-application
+    steps in `quickstart.md` (e.g. `psql -f`, hand-rolled runners) are
+    FORBIDDEN — the canonical bring-up MUST land schema in one command.
+  - **Forward `ASPNETCORE_ENVIRONMENT` to the service project — MANDATORY**
+    (per 2.10.2). Aspire 9.x does NOT auto-propagate `ASPNETCORE_ENVIRONMENT`
+    from the AppHost process to child project resources; child projects
+    inherit only `DOTNET_RESOURCE_SERVICE_ENDPOINT_URL` and a handful of
+    OTEL/DCP variables. The AppHost's `Program.cs` MUST therefore chain
+    `.WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)`
+    on the `AddProject<TService>(...)` call for every service it
+    orchestrates. Without this, the service boots in `Production` even
+    though the AppHost is in `Development`, and Development-gated
+    middleware (Swagger, dev exception pages) is silently absent —
+    making the canonical bring-up appear "up" while violating the
+    Quickstart obligation above. Use `builder.Environment.EnvironmentName`
+    (not the hard-coded literal `"Development"`) so the rule survives
+    staging / Test profiles.
 - **Caching**: [`ZiggyCreatures.FusionCache`](https://github.com/ZiggyCreatures/FusionCache)
   is the only sanctioned cache abstraction. Direct use of `IMemoryCache` /
   `IDistributedCache` / Microsoft `HybridCache` from business code is forbidden
@@ -958,22 +1126,33 @@ codebase honest about complexity.
 - **Persistence — split-responsibility model**:
   - **Database**: PostgreSQL (latest stable major). The Npgsql provider is the
     only sanctioned client.
-  - **Schema management → EF Core 10 (MIGRATIONS ONLY).** A single `DbContext`
-    lives in `Infrastructure/Persistence/Migrations/` (or a dedicated
-    `Infrastructure.Migrations` sub-project) using
-    `Npgsql.EntityFrameworkCore.PostgreSQL`. Its sole purpose is to drive the
-    `dotnet ef migrations add` / `dotnet ef database update` tooling for
-    tables, indexes, functions, views, constraints, and seed data. The
-    `DbContext` MUST NOT be registered for runtime injection into Application
-    or Infrastructure code — physically isolating it (sub-project, no
-    transitive reference from `Application`) is the preferred enforcement.
-    Migrations MUST be checked in and applied at **deploy time** (preferred)
-    or via a startup-time check (allowed); `EnsureCreated` is forbidden in
-    non-test code. The `dotnet-data:optimizing-ef-core-queries` skill is
-    re-scoped under the split-responsibility model: it now applies **only**
-    to reasoning about EF's emitted SQL during migration design (e.g., when
-    a migration triggers a complex data move). It does NOT apply to runtime
-    query authoring — that is Dapper territory.
+  - **Schema management → DbUp (MIGRATIONS ONLY).** A dedicated
+    `Infrastructure.Migrations` sub-project owns schema evolution. Its
+    shape is a Generic Host console (`Microsoft.NET.Sdk` +
+    `<OutputType>Exe</OutputType>`) hosting a `BackgroundService` that, in
+    `ExecuteAsync`, runs DbUp against the Aspire-injected
+    `ConnectionStrings:<service>` and then calls
+    `IHostApplicationLifetime.StopApplication`. SQL scripts ship as
+    embedded resources under `Scripts/NNNN_*.sql` and are tracked in
+    DbUp's `schemaversions` table — DbUp guarantees idempotency at the
+    script-name level. Rules:
+    - **DbUp is the only sanctioned migration tool.** No alternative
+      schema-management framework (ORM-driven migrations, hand-rolled
+      `psql -f` runners, etc.) is permitted. Runtime data access stays on
+      Dapper per the bullet below.
+    - **Scripts are append-only.** Once `0001_Initial.sql` is committed
+      and applied to any environment, it MUST NOT be edited —
+      corrections ship as `0002_*.sql` and forward. Numbering is
+      monotonic; gaps are review blockers.
+    - **No `IF NOT EXISTS` defensive guards.** Scripts MUST be authored
+      against an empty database. The init-container migrator (see Local
+      development orchestration) guarantees they run exactly once and
+      DbUp's `schemaversions` row write is part of the same transaction
+      as the DDL.
+    - **Migrations MUST be applied via the AppHost migrator at dev time**
+      (per Local development orchestration) and via the same console
+      executable invoked at deploy time in production
+      (`dotnet <Service>.Infrastructure.Migrations.dll`).
   - **Runtime CRUD → Dapper (vanilla).** Repository implementations use
     [`Dapper`](https://github.com/DapperLib/Dapper) over a pooled
     `NpgsqlDataSource` registered as a singleton via
@@ -1049,14 +1228,11 @@ codebase honest about complexity.
   - **PATCH**: Clarifications, typo fixes, non-semantic refinements.
 - Compliance review: Every `/speckit-plan` invocation re-evaluates Constitution Check.
   Quarterly, the project owner SHOULD audit recent merges against principles II
-  (test-first), V (security), and VI (Result pattern + no `try`/`catch` + no
+  (test-first), V (operational hardening), and VI (Result pattern + no `try`/`catch` + no
   static state + Builder + Data Annotations) — the three most prone to silent
-  drift. For V specifically the audit MUST cover two questions:
-  (1) are the always-on rules (TLS, secrets, validation, dependency scanning)
-  intact in every recently merged service? and (2) has the auth re-activation
-  trigger fired (any service deployed beyond on-prem, multi-tenant, or with
-  untrusted clients)? If (2) is yes, the deferred rules become MUST and a
-  follow-up issue MUST be opened to re-engage them.
+  drift. For V specifically the audit MUST verify that the four always-on rules
+  (TLS, secrets, server-side validation, vulnerable-dependency scanning) are
+  intact in every recently merged service.
 - **Skill naming convention**: references of the form `namespace:skill-name`
   (e.g., `dotnet-test:run-tests`, `dotnet-aspnet:configuring-opentelemetry-dotnet`)
   are **plugin skills** enabled per-project in `.claude/settings.json` from
@@ -1068,4 +1244,4 @@ codebase honest about complexity.
   (project root) and in the active feature's `plan.md` (linked from `CLAUDE.md`'s
   SPECKIT block).
 
-**Version**: 2.10.0 | **Ratified**: 2026-04-26 | **Last Amended**: 2026-04-27
+**Version**: 3.0.0 | **Ratified**: 2026-04-26 | **Last Amended**: 2026-04-28

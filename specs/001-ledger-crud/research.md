@@ -41,23 +41,32 @@ single source of truth for the assumptions baked into `plan.md`,
   forbids them in new code); minimal-API JSON only (rejected — same
   reason; minimal APIs are reserved for the health + Swagger sidecar).
 
-## 3. Persistence — PostgreSQL via Npgsql, EF (migrations only) + Dapper (runtime)
+## 3. Persistence — PostgreSQL via Npgsql, DbUp (migrations) + Dapper (runtime)
 
 - **Decision**: PostgreSQL 16+ as the database. Schema management via
-  EF Core 10 migrations in a sibling project
-  `src/Infrastructure.Migrations/` with its own `LedgerMigrationsDbContext`
-  (NOT registered for runtime DI). Runtime CRUD via vanilla Dapper over a
+  DbUp running as an Aspire init-container — a Generic Host console
+  in `src/Infrastructure.Migrations/` (`Microsoft.NET.Sdk` +
+  `OutputType=Exe`) that hosts a `BackgroundService` invoking DbUp
+  against the Aspire-injected `ConnectionStrings:ledger`, then signals
+  `IHostApplicationLifetime.StopApplication`. SQL ships under
+  `Scripts/NNNN_*.sql` as embedded resources; DbUp's `schemaversions`
+  table tracks applied scripts. Runtime CRUD via vanilla Dapper over a
   pooled `NpgsqlDataSource` registered as a singleton
   (`services.AddNpgsqlDataSource(...)`). All queries parameterised; no
   string concatenation into SQL.
-- **Rationale**: Constitution Tech Stack > Persistence mandates the split
-  responsibility: EF for schema only, Dapper for runtime queries. Pooled
-  `NpgsqlDataSource` is the recommended high-throughput entry point.
-- **Alternatives considered**: EF Core for runtime CRUD (rejected — banned
-  by the constitution); raw `NpgsqlCommand` (allowed but Dapper's
-  `QueryAsync<T>` / `ExecuteAsync` is the named idiom and keeps mapping
-  out of the repository); `Dapper.Contrib`/`SimpleCRUD` (rejected by the
-  constitution).
+- **Rationale**: Constitution Tech Stack > Persistence mandates the
+  split responsibility: DbUp for schema, Dapper for runtime queries.
+  DbUp is intentionally lightweight (raw SQL + a `schemaversions`
+  tracking table) and fits the Aspire init-container pattern cleanly:
+  the AppHost runs the migrator before the Api boots; no manual
+  schema-application step exists in the dev loop. Pooled
+  `NpgsqlDataSource` is the
+  recommended high-throughput runtime entry point.
+- **Alternatives considered**: ORM-driven migrations (rejected —
+  Constitution names DbUp explicitly); raw `NpgsqlCommand` for runtime
+  (allowed but Dapper's `QueryAsync<T>` / `ExecuteAsync` is the named
+  idiom and keeps mapping out of the repository);
+  `Dapper.Contrib`/`SimpleCRUD` (rejected by the constitution).
 
 ## 4. Caching — FusionCache L1 + L2 (Redis) + Backplane
 
@@ -165,29 +174,31 @@ single source of truth for the assumptions baked into `plan.md`,
   - Per-row `expires_at` + partial-index purge (works but more moving
     parts than a daily `DELETE`).
 
-## 7. Identity context — `ICurrentUser` stub (architectural readiness)
+## 7. Identity context — `ICurrentUser` (feature-level seam)
 
 - **Decision**: Introduce
-  `Application/Abstractions/Identity/ICurrentUser.cs` with a `UserId UserId`
-  property and a single-method shape. Provide an
+  `Application/Abstractions/Identity/ICurrentUser.cs` with a single
+  `Result<Guid> ResolveOwnerId()` method. Provide an
   `Infrastructure/Identity/AnonymousCurrentUser.cs` implementation that
-  reads a stable `X-Owner-Id` request header (set by the trusted gateway
-  inside the on-prem perimeter) and falls back to a configured fixed
-  developer ID in `Development`. Register as `Scoped`.
-- **Rationale**: Constitution Principle V — auth is deferred for
-  on-premise deployment, BUT this feature differentiates behaviour by
-  caller identity (FR-009: ownership scoping; FR-012: actor in the
-  audit log). The architectural-readiness sub-section makes
-  `ICurrentUser` **REQUIRED** in that case so the future swap to a real
-  authenticated implementation is a configuration change, not a handler
-  diff. The header-based stub is a documented pattern for trusted-gateway
-  on-prem.
+  reads the caller-supplied `X-Owner-Id` request header (a UUID) and
+  falls back to a configured fixed developer UUID in `Development`.
+  Register as `Scoped`. A missing or unparseable header returns
+  `Result.Failure(... ErrorType.Validation)` — there is no auth concept
+  in this service.
+- **Rationale**: The constitution (v3.0.0) does not govern authentication
+  or authorization, but this feature still needs to differentiate
+  behaviour by caller identity (FR-009 ownership scoping, FR-012 audit
+  actor). `ICurrentUser` is therefore a **feature-level seam**, not a
+  constitutional readiness stub: it isolates handlers from the transport
+  detail of how the owner UUID arrives, and keeps owner resolution out
+  of every command/query DTO.
 - **Alternatives considered**:
   - Pass `ownerId` as an explicit field in every Application command/query
-    (rejected — couples handlers to transport, makes the future auth
-    swap a sweep across every handler);
-  - No abstraction, hardcode a placeholder owner (rejected — defeats the
-    architectural-readiness rule and is review-blocking under V).
+    (rejected — couples handlers to transport and clutters every DTO with
+    a field every caller would have to populate identically);
+  - No abstraction, read `HttpContext` directly from handlers (rejected —
+    couples Application to ASP.NET hosting and makes unit-testing
+    handlers awkward).
 
 ## 8. Validation strategy — Data Annotations + `IValidatableObject`
 
@@ -379,15 +390,16 @@ single source of truth for the assumptions baked into `plan.md`,
     sync (image versions, ports, env vars). The AppHost is canonical;
     divergence is a review blocker.
 
-- **EF migrations interplay**: the AppHost orchestrates the runtime
-  service but does NOT run migrations. Developers continue to invoke
-  `dotnet ef database update --project src/Infrastructure.Migrations
-  --startup-project src/Infrastructure.Migrations` against the
-  Aspire-provisioned Postgres connection string surfaced in the Aspire
-  dashboard (or hard-coded `Host=localhost;Port=<aspire-mapped>;...`).
-  Per Constitution Tech Stack > Persistence, schema management at
-  deploy time is the preferred enforcement; the AppHost path mirrors
-  that ordering for local dev.
+- **Migrations interplay (init-container)**: the AppHost registers
+  `src/Infrastructure.Migrations/` as a project resource that depends on
+  Postgres being ready, and the Api waits on the migrator's "Running"
+  state via `.WaitFor(migrator)`. The migrator is a Generic Host
+  console that runs DbUp against the Aspire-injected
+  `ConnectionStrings:ledger`, applies any pending `Scripts/NNNN_*.sql`
+  embedded resources, and exits cleanly. Result: schema is present
+  before the first request lands, with no manual step in the dev loop
+  (Constitution v2.11.0 > Tech Stack > Local development orchestration
+  > Schema migrations).
 
 - **Rationale**: The v2.10.0 amendment makes the Aspire AppHost the
   single one-command bring-up across every service in the workspace.
@@ -414,8 +426,9 @@ single source of truth for the assumptions baked into `plan.md`,
 
 The following are **not** addressed in this plan:
 
-- Authentication / authorisation implementation (deferred per Principle V;
-  `ICurrentUser` stub only);
+- Authentication / authorisation: out of constitutional scope (v3.0.0).
+  `ICurrentUser` reads the caller-supplied `X-Owner-Id` header for
+  owner-scoping / audit purposes only;
 - Posting transactions or journal entries into a ledger;
 - Changing a ledger's currency post-creation;
 - An end-user-facing audit-log viewer;
@@ -431,7 +444,7 @@ The following are **not** addressed in this plan:
 | Transport | gRPC (`Grpc.AspNetCore` + JsonTranscoding + Swagger) |
 | Proto package | `sddDemo.ledger.v1` |
 | DB | PostgreSQL 16+ via Npgsql; pooled `NpgsqlDataSource` |
-| Schema | EF Core 10 migrations in `src/Infrastructure.Migrations/` |
+| Schema | DbUp init-container in `src/Infrastructure.Migrations/` (`Scripts/NNNN_*.sql`) |
 | Runtime CRUD | Vanilla Dapper, parameterised SQL |
 | Cache | FusionCache L1+L2 (Redis) + Backplane; decorator via Scrutor |
 | Concurrency | bigint `version` column; opaque base64 token on the wire |

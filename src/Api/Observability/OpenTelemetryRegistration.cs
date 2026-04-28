@@ -3,6 +3,7 @@ using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using SddDemo.Ledger.Application.Abstractions.Observability;
 using ZiggyCreatures.Caching.Fusion.OpenTelemetry;
 
 namespace SddDemo.Ledger.Api.Observability;
@@ -27,6 +28,7 @@ public static class OpenTelemetryRegistration
     public static IServiceCollection AddLedgerOpenTelemetry(this IServiceCollection services)
     {
         services.AddSingleton<LedgerMetrics>();
+        services.AddSingleton<ILedgerMetrics>(sp => sp.GetRequiredService<LedgerMetrics>());
 
         services.AddOpenTelemetry()
             .ConfigureResource(rb => rb

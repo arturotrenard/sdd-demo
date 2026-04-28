@@ -16,9 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- AppHost references the Api project to orchestrate it for `F5`.
-         No runtime project references the AppHost back (T088 enforces this in CI). -->
+    <!-- AppHost references the Api + the DbUp migrations runner to orchestrate
+         the canonical bring-up. Runtime projects do NOT reference the AppHost
+         back (T088 enforces this in CI). -->
     <ProjectReference Include="..\Api\SddDemo.Ledger.Api.csproj" />
+    <ProjectReference Include="..\Infrastructure.Migrations\SddDemo.Ledger.Infrastructure.Migrations.csproj" />
   </ItemGroup>
 
 </Project>

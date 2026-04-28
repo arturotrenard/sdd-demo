@@ -14,13 +14,13 @@
 - Q: Delete semantics — recoverable or permanent? → A: Hard-delete; the row is removed and the audit log is the sole remaining record. Re-creating a ledger with the same name is allowed immediately after delete.
 - Q: Audit log retention and access? → A: 1-year retention then automatic purge; read access limited to admin/ops, not exposed to end users.
 - Q: Concurrency control on updates? → A: Optimistic concurrency. Reads return a version token; updates must echo it; stale tokens are rejected with a conflict response, prompting the client to re-read and retry.
-- Q: How does FR-010's "reject anonymous" rule reconcile with the on-prem deployment context? → A: Authn/authz are explicitly **deferred** per Constitution Principle V > Deferral (services run anonymously inside the trusted on-prem perimeter). Inside that perimeter, the trusted gateway supplies a stable owner identifier on every request via the `X-Owner-Id` header, which the service treats as the authenticated principal for ownership and audit-actor purposes. The deferred authn rules **re-engage automatically as MUST** the moment any of the following becomes true: (a) a service ships beyond the on-prem network (cloud, hybrid, partner, internet); (b) a service serves more than one tenant or trust zone; (c) the deployment introduces an untrusted client. Until a trigger fires, FR-010's "authentication" is satisfied by gateway-supplied identity; once a trigger fires, FR-010 reads as written.
+- Q: How does FR-010's "reject anonymous" rule reconcile with the system's scope? → A: The constitution (v3.0.0) does not govern authentication or authorization. FR-010 is therefore reframed as an **owner-identifier** requirement: every request MUST carry a resolvable owner identifier (the `X-Owner-Id` header), which the service uses for ownership scoping (FR-009) and audit-actor logging (FR-012). A missing or unparseable header is malformed input — the service rejects it as a `Validation` failure, not as an authentication failure. There is no `[Authorize]`, no token-based authentication, no auth interceptor, and no automatic re-activation trigger; if a future deployment grows past the on-premise / single-tenant scope, an auth model can be introduced as a feature concern.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Create a new ledger (Priority: P1)
 
-An authenticated user opens the application and creates a new ledger by providing a name, an optional description, and a currency. The newly created ledger is persisted, assigned a unique identifier, time-stamped, and immediately available for the user to view.
+A user opens the application and creates a new ledger by providing a name, an optional description, and a currency. The newly created ledger is persisted, assigned a unique identifier, time-stamped, and immediately available for the user to view.
 
 **Why this priority**: Without the ability to create a ledger, no other operation has meaning. This is the entry point for all downstream value.
 
@@ -28,15 +28,15 @@ An authenticated user opens the application and creates a new ledger by providin
 
 **Acceptance Scenarios**:
 
-1. **Given** an authenticated user with no ledger named "Operating Account", **When** they submit a creation request with name "Operating Account" and currency "USD", **Then** the system stores the ledger, returns its unique identifier, and lists it as active.
-2. **Given** an authenticated user, **When** they attempt to create a ledger with a name that already exists in their own ledger collection, **Then** the system rejects the request with a clear duplicate-name message and does not create a new record.
-3. **Given** an authenticated user, **When** they submit a creation request missing a required field (name or currency), **Then** the system rejects the request with a validation error indicating the missing field.
+1. **Given** a user with no ledger named "Operating Account", **When** they submit a creation request with name "Operating Account" and currency "USD", **Then** the system stores the ledger, returns its unique identifier, and lists it as active.
+2. **Given** a user, **When** they attempt to create a ledger with a name that already exists in their own ledger collection, **Then** the system rejects the request with a clear duplicate-name message and does not create a new record.
+3. **Given** a user, **When** they submit a creation request missing a required field (name or currency), **Then** the system rejects the request with a validation error indicating the missing field.
 
 ---
 
 ### User Story 2 - View ledgers (Priority: P1)
 
-An authenticated user retrieves a list of all ledgers they own and can also fetch the full details of a single ledger by identifier. Listing supports basic pagination so the user can navigate large collections.
+A user retrieves a list of all ledgers they own and can also fetch the full details of a single ledger by identifier. Listing supports basic pagination so the user can navigate large collections.
 
 **Why this priority**: Users need to confirm that creation succeeded, locate ledgers by identifier, and inspect details before performing updates. Read access pairs with create as the minimum useful slice.
 
@@ -44,16 +44,16 @@ An authenticated user retrieves a list of all ledgers they own and can also fetc
 
 **Acceptance Scenarios**:
 
-1. **Given** an authenticated user owning three ledgers, **When** they request a list of their ledgers, **Then** the system returns all three with summary fields (identifier, name, currency, status, last-updated timestamp).
-2. **Given** an authenticated user owning a ledger with a known identifier, **When** they fetch that ledger by identifier, **Then** the system returns the ledger's full details.
-3. **Given** an authenticated user requesting a ledger that does not exist or that they do not own, **When** they fetch by identifier, **Then** the system returns a not-found response without leaking ownership information.
-4. **Given** an authenticated user owning more ledgers than the page size, **When** they request the second page, **Then** the system returns the next set of ledgers in deterministic order.
+1. **Given** a user owning three ledgers, **When** they request a list of their ledgers, **Then** the system returns all three with summary fields (identifier, name, currency, status, last-updated timestamp).
+2. **Given** a user owning a ledger with a known identifier, **When** they fetch that ledger by identifier, **Then** the system returns the ledger's full details.
+3. **Given** a user requesting a ledger that does not exist or that they do not own, **When** they fetch by identifier, **Then** the system returns a not-found response without leaking ownership information.
+4. **Given** a user owning more ledgers than the page size, **When** they request the second page, **Then** the system returns the next set of ledgers in deterministic order.
 
 ---
 
 ### User Story 3 - Update an existing ledger (Priority: P2)
 
-An authenticated user modifies the editable attributes of a ledger they own — for example, renaming it, updating its description, or changing its status (active/archived). The system records the time of the change.
+A user modifies the editable attributes of a ledger they own — for example, renaming it, updating its description, or changing its status (active/archived). The system records the time of the change.
 
 **Why this priority**: Once ledgers exist, users need to correct mistakes and reflect organizational changes. Update is essential but only meaningful after create and read are working.
 
@@ -72,7 +72,7 @@ An authenticated user modifies the editable attributes of a ledger they own — 
 
 ### User Story 4 - Delete a ledger (Priority: P3)
 
-An authenticated user removes a ledger they own that is no longer needed. After deletion, the ledger no longer appears in their list and cannot be fetched.
+A user removes a ledger they own that is no longer needed. After deletion, the ledger no longer appears in their list and cannot be fetched.
 
 **Why this priority**: Cleanup is valuable but lower-frequency than create/read/update. Users can work productively without delete in the short term.
 
@@ -92,24 +92,24 @@ An authenticated user removes a ledger they own that is no longer needed. After 
 - What happens when a ledger name contains only whitespace or exceeds the maximum allowed length? The system rejects the creation/update with a validation error.
 - What happens when two different users create ledgers with the same name? Names are unique only within a single owner's collection, so both succeed.
 - How does the system handle concurrent updates to the same ledger from two sessions? Optimistic concurrency: each update must include the version token returned by the most recent read. The first writer succeeds; the second receives a conflict response and must re-read, merge, and retry.
-- What happens when an unauthenticated request hits any endpoint? The system rejects it with an authentication error before any ledger logic runs.
+- What happens when a request lacks a resolvable owner identity (no `X-Owner-Id` header — and not in Development with the `Identity:DevOwnerId` fallback)? The system rejects it as malformed input with a validation error (`identity.missing_owner`) before any ledger logic runs. The constitution (v3.0.0) does not govern authentication or authorization, so this is treated as a malformed request, not an authentication failure.
 - What happens when the user supplies an unsupported currency code? The system rejects the request with a validation error listing the accepted codes.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST allow an authenticated user to create a ledger by providing a name and a currency code, with description as an optional field.
+- **FR-001**: System MUST allow a user to create a ledger by providing a name and a currency code, with description as an optional field.
 - **FR-002**: System MUST assign each ledger a unique, stable identifier on creation and record creation and last-modified timestamps. The System MUST also maintain a per-ledger version token that changes on every successful update; the token MUST be returned by every read (single-fetch and list).
 - **FR-003**: System MUST enforce that ledger names are unique within a single owner's collection (case-insensitive).
 - **FR-004**: System MUST validate currency codes against a predefined list of supported codes (ISO 4217) and reject unknown values.
-- **FR-005**: System MUST allow an authenticated user to retrieve a single ledger by identifier, returning a not-found response if it does not exist or belongs to another owner.
-- **FR-006**: System MUST allow an authenticated user to list the ledgers they own with deterministic ordering and basic pagination. By default the list MUST include only `active` ledgers; an explicit "include archived" filter MUST be supported to retrieve archived ledgers as well.
-- **FR-007**: System MUST allow an authenticated user to update editable attributes of an `active` ledger they own (name, description, status), preserving the original creation timestamp and updating the last-modified timestamp. Every update request MUST include the version token from the client's most recent read; if the supplied token does not match the current stored token, the System MUST reject the update with a conflict response and MUST NOT modify any data. On success, the System MUST issue a new version token and return it.
+- **FR-005**: System MUST allow a user to retrieve a single ledger by identifier, returning a not-found response if it does not exist or belongs to another owner.
+- **FR-006**: System MUST allow a user to list the ledgers they own with deterministic ordering and basic pagination. By default the list MUST include only `active` ledgers; an explicit "include archived" filter MUST be supported to retrieve archived ledgers as well.
+- **FR-007**: System MUST allow a user to update editable attributes of an `active` ledger they own (name, description, status), preserving the original creation timestamp and updating the last-modified timestamp. Every update request MUST include the version token from the client's most recent read; if the supplied token does not match the current stored token, the System MUST reject the update with a conflict response and MUST NOT modify any data. On success, the System MUST issue a new version token and return it.
 - **FR-007a**: For an `archived` ledger, the System MUST reject all updates except a status change back to `active` (un-archive). Renaming, description edits, and other attribute changes are not permitted while the ledger is archived.
-- **FR-008**: System MUST allow an authenticated user to delete an `active` ledger they own. Delete is permanent (hard-delete): the ledger record MUST be removed and MUST be unreachable via list and fetch afterwards; the audit log entry (FR-012) is the only remaining record. After a delete, the same owner MAY immediately create a new ledger with the same name. The System MUST reject delete requests targeting an `archived` ledger; the user must un-archive it first.
+- **FR-008**: System MUST allow a user to delete an `active` ledger they own. Delete is permanent (hard-delete): the ledger record MUST be removed and MUST be unreachable via list and fetch afterwards; the audit log entry (FR-012) is the only remaining record. After a delete, the same owner MAY immediately create a new ledger with the same name. The System MUST reject delete requests targeting an `archived` ledger; the user must un-archive it first.
 - **FR-009**: System MUST reject any read/update/delete request from a user who does not own the targeted ledger, without revealing whether the ledger exists.
-- **FR-010**: System MUST require an authenticated caller identity on every operation and reject requests that lack one. *(Per the 2026-04-27 clarification: while authn/authz are deferred under the on-prem deployment context, the trusted gateway supplies the owner identity via the `X-Owner-Id` header and the service rejects requests with no resolvable owner. The deferred authn rules — token-based authentication, `[Authorize]` on the gRPC service, etc. — re-engage automatically when any of the listed deferral triggers fires; FR-010 then reads as originally written.)*
+- **FR-010**: System MUST require a resolvable owner identifier on every operation and reject requests that lack one. The owner identifier is supplied by the caller via the `X-Owner-Id` header (a UUID) and is used for ownership scoping (FR-009) and audit-actor logging (FR-012). A missing or unparseable header is rejected as malformed input (Validation). The constitution (v3.0.0) does not mandate an authentication or authorization model; if a future deployment introduces untrusted clients, a real auth layer can be added as a feature concern without changing this requirement.
 - **FR-011**: System MUST return clear, actionable validation errors for malformed input (missing required fields, oversized values, invalid status, unsupported currency).
 - **FR-012**: System MUST log every create, update, and delete event with the actor identifier, ledger identifier, event type, and timestamp, sufficient to reconstruct an audit trail. Audit entries MUST be retained for 1 year from the event timestamp and MUST be automatically purged after that window. Audit entries MUST NOT be exposed through any end-user-facing endpoint; read access is limited to admin/ops roles.
 
@@ -117,22 +117,22 @@ An authenticated user removes a ledger they own that is no longer needed. After 
 
 - **Ledger**: A named, owner-scoped record representing a logical accounting container. Key attributes: unique identifier, name, optional description, currency code, status (active/archived), owner reference, version token, creation timestamp, last-modified timestamp. A ledger belongs to exactly one owner; an owner may have many ledgers.
 - **Audit Entry**: A non-user-facing record of a create/update/delete event on a ledger. Key attributes: actor identifier, ledger identifier, event type, timestamp. Retained for 1 year, then purged; readable only by admin/ops.
-- **Owner (User)**: The authenticated principal that owns ledgers. Identified by a stable user identifier supplied by the existing authentication layer. Out of scope for this feature beyond the ownership reference.
+- **Owner (User)**: The principal that owns ledgers. Identified by a stable UUID supplied by the caller via the `X-Owner-Id` header. Out of scope for this feature beyond the ownership reference.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: An authenticated user can complete the create-then-view round-trip for a new ledger in under 30 seconds end-to-end.
+- **SC-001**: A user can complete the create-then-view round-trip for a new ledger in under 30 seconds end-to-end.
 - **SC-002**: 99% of valid CRUD operations on a single ledger return a result to the user in under 1 second under nominal load.
 - **SC-003**: Listing a user's ledgers (up to one page) returns results in under 1 second for users with up to 1,000 ledgers.
-- **SC-004**: 100% of attempts by a user to access another user's ledgers are rejected (verified by automated authorization tests).
+- **SC-004**: 100% of attempts by a user to access another user's ledgers are rejected (verified by automated owner-scoping tests).
 - **SC-005**: 100% of create/update/delete events appear in the audit log within 5 seconds of the operation completing.
 - **SC-006**: Validation errors are clear enough that, in usability checks, at least 90% of users correct their input on the first retry without external help.
 
 ## Assumptions
 
-- An existing authentication layer is available and provides a stable user identifier on every request; designing or extending authentication is out of scope.
+- The caller supplies a stable owner identifier (UUID) on every request via the `X-Owner-Id` header. The constitution (v3.0.0) does not govern authentication or authorization; designing or extending an auth layer is out of scope for this feature.
 - "Basic CRUD" applies to the Ledger resource itself. Posting transactions or journal entries into a ledger is out of scope for this feature and will be specified separately.
 - Each ledger has a single currency that is set at creation; changing currency post-creation is out of scope and is not exposed by the update operation.
 - Deletes are permanent (hard-delete). The audit log (FR-012) is the only retained record of a deleted ledger; there is no user-facing or admin restore path.

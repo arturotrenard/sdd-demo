@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Application\SddDemo.Ledger.Application.csproj" />
+    <!-- CurrencyCatalog (concrete ICurrencyCatalog) lives in Infrastructure. -->
+    <ProjectReference Include="..\..\src\Infrastructure\SddDemo.Ledger.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

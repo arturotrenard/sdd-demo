@@ -19,15 +19,18 @@ collector). `docker compose` remains as a documented fallback only.
 
 - **.NET 10 SDK** (latest stable). Verify with `dotnet --info` →
   `.NET SDK ... Version: 10.x`.
-- **`Aspire.Hosting.AppHost` workload** is shipped as NuGet packages
-  on .NET 10; no separate `dotnet workload install aspire` step is
-  required. Docker remains the container backend used by Aspire's
-  Postgres/Redis hosting integrations under the hood.
+- **.NET Aspire is delivered as NuGet packages** (`Aspire.Hosting.AppHost`,
+  `Aspire.Hosting.PostgreSQL`, `Aspire.Hosting.Redis`, plus the
+  `Aspire.AppHost.Sdk` MSBuild SDK) referenced directly by
+  `src/AppHost/`; pinned in `Directory.Packages.props` via CPM. The
+  legacy `aspire` workload is deprecated — do **not** run
+  `dotnet workload install aspire`. See
+  https://aka.ms/aspire/support-policy. Docker remains the container
+  backend used by Aspire's Postgres/Redis hosting integrations under
+  the hood.
 - **Docker** (for the container backend Aspire uses for Postgres +
   Redis, and for Testcontainers in the test suite). Docker Desktop or
   Colima both work.
-- **`dotnet-ef` global tool**: `dotnet tool install --global dotnet-ef`
-  (used only for migrations against `Infrastructure.Migrations`).
 - Optional: **`grpcurl`** for ad-hoc gRPC calls
   (`brew install grpcurl` on macOS).
 
@@ -40,7 +43,7 @@ src/
 ├── Domain/                       (zero deps)
 ├── Application/                  → Domain
 ├── Infrastructure/               → Application
-├── Infrastructure.Migrations/    → Application      (EF Core, migrations only)
+├── Infrastructure.Migrations/    DbUp init-container console (no Application dep)
 ├── Contracts/                    (zero src/ deps)
 ├── Api/                          → Application + Infrastructure + Contracts
 └── AppHost/                      .NET Aspire orchestration (dev-loop only;
@@ -84,18 +87,19 @@ dotnet run --project src/AppHost
 #     (logs / metrics / traces show up live in the dashboard's panels)
 ```
 
-The Aspire dashboard exposes the Postgres connection string under the
-"Resources" tab — copy it into the `dotnet ef` command if you need to
-run migrations manually:
+Schema is applied automatically: the AppHost wires
+`src/Infrastructure.Migrations/` (a DbUp console) as an Aspire
+**init-container** that runs before the Api boots — see Constitution
+v2.11.0 (Tech Stack > Local development orchestration > Schema
+migrations). DbUp's `schemaversions` table is the source of truth on
+which scripts have already been applied; on subsequent restarts the
+migrator skips them in <100 ms.
 
-```bash
-# 3. Run migrations against the Aspire-provisioned Postgres.
-#    (Replace <connection-string> with the value from the dashboard.)
-dotnet ef database update \
-    --project src/Infrastructure.Migrations \
-    --startup-project src/Infrastructure.Migrations \
-    --connection "<connection-string>"
-```
+Schema scripts live as embedded SQL under
+`src/Infrastructure.Migrations/Scripts/NNNN_*.sql`. New scripts are
+append-only — never edit a committed script; ship `NNNN+1` instead.
+DbUp is the only sanctioned migration tool (Constitution v2.11.0 >
+Tech Stack > Persistence > Schema management).
 
 Once the AppHost is running, the Api is reachable at the URL the
 dashboard prints under the `api` resource — typically
@@ -106,11 +110,16 @@ dashboard prints under the `api` resource — typically
 - `https://localhost:5001/health/ready` — readiness (DB + Redis +
   backplane).
 
-Inside the on-prem perimeter (production), the trusted gateway sets
-the `X-Owner-Id: <uuid>` header on every request; locally the
+Every request MUST carry an `X-Owner-Id: <uuid>` header — the service
+uses it for ownership scoping (FR-009) and audit-actor logging
+(FR-012). The constitution (v3.0.0) does not govern authentication, so
+a missing or unparseable header is rejected as malformed input
+(`Validation` → `InvalidArgument`), not as an auth failure. Locally,
 `AnonymousCurrentUser` falls back to a configured fixed developer UUID
-in `Development` (set via `LedgerOptions:DevOwnerId` in
-`appsettings.Development.json`).
+in `Development` (set via `Identity:DevOwnerId` in
+`src/Api/appsettings.Development.json` — bound to
+`AnonymousCurrentUserOptions` in `Program.cs`) so Swagger / `grpcurl`
+calls succeed without sending the header by hand.
 
 ### 3a. Fallback bring-up (`docker-compose.dev.yml` — SDK-less environments only)
 
@@ -124,10 +133,9 @@ docker compose -f docker-compose.dev.yml up -d
 #   postgres:  localhost:5432  user=ledger  password=ledger  db=ledger
 #   redis:     localhost:6379
 
-dotnet ef database update \
-    --project src/Infrastructure.Migrations \
-    --startup-project src/Infrastructure.Migrations \
-    --connection "Host=localhost;Port=5432;Username=ledger;Password=ledger;Database=ledger"
+# Apply DbUp migrations against the compose-managed Postgres.
+ConnectionStrings__ledger="Host=localhost;Port=5432;Username=ledger;Password=ledger;Database=ledger" \
+  dotnet run --project src/Infrastructure.Migrations
 
 dotnet run --project src/Api
 ```
@@ -349,7 +357,7 @@ the canonical pattern from constitution Principle II.
 |---|---|---|
 | `dotnet run --project src/AppHost` exits with "Aspire.Hosting.AppHost not found" | Aspire packages not restored | Run `dotnet restore`; verify `Directory.Packages.props` pins `Aspire.Hosting.AppHost`, `Aspire.Hosting.PostgreSQL`, `Aspire.Hosting.Redis`. |
 | AppHost starts but Api fails to connect to Postgres/Redis | Connection-string injection not wired | Verify `Api/Program.cs` reads `builder.Configuration.GetConnectionString("ledger")` / `"redis"` (the names used in `AppHost/Program.cs`). |
-| `EnsureCreated` error at startup | Migration project not referenced or DB not migrated | `dotnet ef database update --project src/Infrastructure.Migrations --connection "<aspire-postgres-connstr>"`. |
+| `relation "<table>" does not exist` at first request | Migrator init-container did not run (likely because AppHost wiring missed `WaitFor(migrator)` or the script in `src/Infrastructure.Migrations/Scripts/` is not embedded). Verify `schemaversions` table exists in Postgres; if missing, the migrator never ran — check the dashboard's `migrator` resource state and stderr. |
 | `StatusCode.Internal` with correlation ID | Unhandled exception caught by safety-net interceptor | Inspect the Aspire dashboard's Structured logs filtered by `trace_id`, or — under the compose fallback — your log sink. |
 | Update returns `AlreadyExists` immediately after a fresh read | Two clients raced and the other one won | Re-fetch the ledger and retry with the new `version_token` (FR-007). |
 | Cache appears stale after an update | Tag invalidation skipped | Verify the command handler called `RemoveByTagAsync("owner:{ownerId}")` and (for Update/Delete) `RemoveByTagAsync("ledger:{ledgerId}")`. |

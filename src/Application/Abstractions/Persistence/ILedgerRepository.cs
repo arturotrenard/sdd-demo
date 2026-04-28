@@ -1,23 +1,24 @@
+using SddDemo.Ledger.Domain.Auditing;
 using SddDemo.Ledger.Domain.Common;
+using SddDemo.Ledger.Domain.Ledgers;
+using DomainLedger = SddDemo.Ledger.Domain.Ledgers.Ledger;
 
 namespace SddDemo.Ledger.Application.Abstractions.Persistence;
 
 /// <summary>
-/// data-model.md §5 — public ledger repository contract. Implementations land in Phase 3+:
-/// LedgerRepository (Dapper) and CachingLedgerRepository (FusionCache decorator wired via
-/// Scrutor). Domain types and audit entries are written in the same transaction
-/// (research.md §6).
+/// data-model.md §5 — public ledger repository contract. The Phase 3 surface only
+/// covers <see cref="CreateAsync"/>; later story phases add Get/List (US2),
+/// Update (US3), and Delete (US4).
 /// </summary>
-/// <remarks>
-/// Concrete signatures use Object placeholders for Ledger / AuditEntry / LedgerListPage —
-/// the real Domain/DTO types land in user-story phases (T044, T045, T057).
-/// This interface is intentionally minimal until those types exist; refer to
-/// data-model.md §5 for the canonical signatures the user-story phases will introduce.
-/// </remarks>
 public interface ILedgerRepository
 {
-    // CreateAsync / UpdateAsync / DeleteAsync / GetByIdAsync / ListAsync land in
-    // Phases 3-6 (US1..US4) when Ledger, AuditEntry, and LedgerListPage exist.
-    // Marker method ensures the interface compiles until then.
-    Task<Result> PingAsync(CancellationToken cancellationToken);
+    /// <summary>
+    /// Inserts the ledger and writes the create audit entry in the same transaction.
+    /// Returns <see cref="LedgerErrors.NameAlreadyExists"/> on a case-insensitive
+    /// owner-scoped duplicate name (FR-003).
+    /// </summary>
+    Task<Result<DomainLedger>> CreateAsync(
+        DomainLedger ledger,
+        AuditEntry audit,
+        CancellationToken cancellationToken);
 }

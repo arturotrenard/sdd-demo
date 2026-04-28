@@ -13,7 +13,9 @@ public interface ICurrentUser
 {
     /// <summary>
     /// The stable owner identifier resolved for the current request, or a Failure
-    /// (ErrorType.Unauthorized) when no identity can be resolved.
+    /// (ErrorType.Validation) when the trusted-gateway header is missing/unparseable.
+    /// Authn/authz are deferred (Constitution Principle V) — this is malformed input,
+    /// not an auth failure.
     /// </summary>
     Result<Guid> ResolveOwnerId();
 }

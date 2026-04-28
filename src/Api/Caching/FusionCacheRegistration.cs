@@ -22,7 +22,15 @@ public static class FusionCacheRegistration
     {
         var redis = configuration.GetConnectionString("redis");
 
-        var builder = services.AddFusionCache(CacheName)
+        if (!string.IsNullOrWhiteSpace(redis))
+        {
+            services.AddStackExchangeRedisCache(o => o.Configuration = redis);
+        }
+
+        // Default (unnamed) registration so consumers can inject IFusionCache directly.
+        // TryWithAutoSetup picks up the L2 IDistributedCache + a backplane registered
+        // alongside (FusionCache 2.x — see DependencyInjection.md in the package).
+        var builder = services.AddFusionCache()
             .WithDefaultEntryOptions(new FusionCacheEntryOptions
             {
                 Duration = TimeSpan.FromMinutes(10),
@@ -32,16 +40,19 @@ public static class FusionCacheRegistration
                 // Placeholder — replaced before merge by T081's measured factory P50.
                 FactorySoftTimeout = TimeSpan.FromMilliseconds(200),
                 FactoryHardTimeout = TimeSpan.FromSeconds(2),
+                // Distributed cache + backplane operations must fail fast so a slow Redis
+                // never blocks the calling write path (cache invalidation is best-effort).
+                DistributedCacheSoftTimeout = TimeSpan.FromMilliseconds(200),
+                DistributedCacheHardTimeout = TimeSpan.FromSeconds(1),
+                AllowBackgroundDistributedCacheOperations = true,
+                AllowBackgroundBackplaneOperations = true,
             })
-            .WithSerializer(new FusionCacheSystemTextJsonSerializer());
+            .WithSerializer(new FusionCacheSystemTextJsonSerializer())
+            .TryWithAutoSetup();
 
         if (!string.IsNullOrWhiteSpace(redis))
         {
-            services.AddStackExchangeRedisCache(o => o.Configuration = redis);
-
-            builder.WithDistributedCache(sp =>
-                sp.GetRequiredService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>())
-                .WithBackplane(new RedisBackplane(new RedisBackplaneOptions { Configuration = redis }));
+            builder.WithBackplane(new RedisBackplane(new RedisBackplaneOptions { Configuration = redis }));
         }
 
         // FusionCache OTel instrumentation is wired alongside the OTel pipeline

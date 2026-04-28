@@ -9,8 +9,9 @@ namespace SddDemo.Ledger.Infrastructure.Identity;
 /// <summary>
 /// research.md §7 + spec.md FR-010 clarification — reads the trusted-gateway-supplied
 /// <c>X-Owner-Id</c> header in non-Development environments, and falls back to a configured
-/// fixed developer UUID in Development. Missing/unparseable header in non-Development
-/// returns Failure(ErrorType.Unauthorized) so handlers short-circuit.
+/// fixed developer UUID in Development. Authn/authz are deferred (Constitution Principle V),
+/// so a missing/unparseable header is treated as malformed input and returns
+/// Failure(ErrorType.Validation) — there is no auth concept in this service today.
 /// </summary>
 public sealed class AnonymousCurrentUser(
     IHttpContextAccessor httpContextAccessor,
@@ -22,12 +23,12 @@ public sealed class AnonymousCurrentUser(
     private static readonly Error MissingOwner = new(
         "identity.missing_owner",
         $"No '{OwnerHeaderName}' header on the incoming request.",
-        ErrorType.Unauthorized);
+        ErrorType.Validation);
 
     private static readonly Error InvalidOwner = new(
         "identity.invalid_owner",
         $"'{OwnerHeaderName}' header is not a valid UUID.",
-        ErrorType.Unauthorized);
+        ErrorType.Validation);
 
     public Result<Guid> ResolveOwnerId()
     {

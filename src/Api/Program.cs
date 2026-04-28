@@ -22,6 +22,10 @@ using SddDemo.Ledger.Api.Observability;
 using SddDemo.Ledger.Application.Abstractions.Identity;
 using SddDemo.Ledger.Application.Abstractions.Persistence;
 using SddDemo.Ledger.Application.Features.Ledgers.Commands.CreateLedger;
+using SddDemo.Ledger.Application.Features.Ledgers.Commands.DeleteLedger;
+using SddDemo.Ledger.Application.Features.Ledgers.Commands.UpdateLedger;
+using SddDemo.Ledger.Application.Features.Ledgers.Queries.GetLedger;
+using SddDemo.Ledger.Application.Features.Ledgers.Queries.ListLedgers;
 using SddDemo.Ledger.Infrastructure.Background;
 using SddDemo.Ledger.Infrastructure.Currency;
 using SddDemo.Ledger.Infrastructure.Identity;
@@ -66,6 +70,10 @@ builder.Services.Decorate<ILedgerRepository, CachingLedgerRepository>();
 
 // Application handlers (CQRS via folders + DI per Constitution Principle VI).
 builder.Services.AddScoped<CreateLedgerHandler>();
+builder.Services.AddScoped<GetLedgerHandler>();
+builder.Services.AddScoped<ListLedgersHandler>();
+builder.Services.AddScoped<UpdateLedgerHandler>();
+builder.Services.AddScoped<DeleteLedgerHandler>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 // --- Caching (FusionCache L1 + Redis L2 + Backplane) -----------------------------------------

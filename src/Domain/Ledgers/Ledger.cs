@@ -94,20 +94,30 @@ public sealed class Ledger : IValidatableObject
         /// </summary>
         public Result<Ledger> Build(IServiceProvider? services = null)
         {
-            var ledger = new Ledger
-            {
-                Id = _id,
-                OwnerId = _ownerId,
-                Name = _name,
-                Description = _description,
-                CurrencyCode = _currencyCode,
-                Status = _status,
-                Version = _version,
-                CreatedAt = _createdAt,
-                LastModifiedAt = _lastModifiedAt,
-            };
-
+            var ledger = Materialise();
             return DomainValidator.Validate(ledger, services);
         }
+
+        /// <summary>
+        /// Reconstitutes a <see cref="Ledger"/> from already-persisted data without
+        /// re-running validation. Use ONLY from the Infrastructure persistence layer
+        /// — the database's check constraints (data-model.md §2) and the original
+        /// Build-time validation are the source of truth for those rows. Calling
+        /// this from Application or Domain code is a review blocker.
+        /// </summary>
+        internal Ledger BuildFromPersistence() => Materialise();
+
+        private Ledger Materialise() => new()
+        {
+            Id = _id,
+            OwnerId = _ownerId,
+            Name = _name,
+            Description = _description,
+            CurrencyCode = _currencyCode,
+            Status = _status,
+            Version = _version,
+            CreatedAt = _createdAt,
+            LastModifiedAt = _lastModifiedAt,
+        };
     }
 }

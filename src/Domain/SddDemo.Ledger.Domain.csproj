@@ -9,4 +9,12 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- BuildFromPersistence on Domain builders is internal so only the
+         Infrastructure persistence layer can reconstruct aggregates from
+         already-validated rows (skipping re-validation). Application/Api
+         have no access — they go through Build(...) which validates. -->
+    <InternalsVisibleTo Include="SddDemo.Ledger.Infrastructure" />
+  </ItemGroup>
+
 </Project>
